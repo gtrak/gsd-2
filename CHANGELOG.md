@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.3.8] - 2026-03-11
+
+### Fixed
+- Worktree file operations (Write, Read, Edit) now resolve paths against the active working directory instead of the launch directory (#72)
+- Auto-mode merge guard handles all slice completion paths, preventing infinite dispatch loops when `complete-slice` is bypassed (#71)
+
 ## [2.3.7] - 2026-03-11
 
 ### Added
@@ -150,7 +156,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.3.7...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.3.8...HEAD
+[2.3.8]: https://github.com/gsd-build/gsd-2/compare/v2.3.7...v2.3.8
 [2.3.7]: https://github.com/gsd-build/gsd-2/compare/v2.3.6...v2.3.7
 [2.3.6]: https://github.com/gsd-build/gsd-2/compare/v2.3.5...v2.3.6
 [2.3.5]: https://github.com/gsd-build/gsd-2/compare/v2.3.4...v2.3.5

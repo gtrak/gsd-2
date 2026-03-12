@@ -372,3 +372,93 @@ test("gsd launches and loads extensions without errors", async () => {
     "no ERR_MODULE_NOT_FOUND",
   );
 });
+/**
+ * 9. buildResourceLoader includes ~/.pi/agent/extensions in additionalExtensionPaths
+ */
+test("buildResourceLoader source includes ~/.pi/agent/extensions path", async () => {
+  const { join } = await import("node:path");
+  
+  // Verify the source code includes the pi extensions path
+  const loaderSrc = readFileSync(join(projectRoot, "src", "resource-loader.ts"), "utf-8");
+  
+  // Check that buildResourceLoader references ~/.pi/agent
+  assert.ok(
+    loaderSrc.includes(".pi"),
+    "resource-loader.ts references .pi directory"
+  );
+  assert.ok(
+    loaderSrc.includes("additionalExtensionPaths"),
+    "resource-loader.ts uses additionalExtensionPaths"
+  );
+  assert.ok(
+    loaderSrc.includes("homedir()"),
+    "resource-loader.ts uses homedir() to construct paths"
+  );
+  
+  // Verify the function constructs the correct path
+  assert.match(
+    loaderSrc,
+    /join\(homedir\(\),\s*['"]\.pi['"],\s*['"]agent['"]\)/,
+    "buildResourceLoader constructs ~/.pi/agent path"
+  );
+});
+
+/**
+ * 10. cli.ts uses ~/.pi/agent/extensions/ path at runtime
+ */
+test("cli.ts constructs ~/.pi/agent/extensions/ path for additionalExtensionPaths", async () => {
+  const { join } = await import("node:path");
+  
+  // Verify cli.ts source includes the .pi extensions path logic
+  const cliSrc = readFileSync(join(projectRoot, "src", "cli.ts"), "utf-8");
+  
+  // Check that cli.ts references .pi directory
+  assert.ok(
+    cliSrc.includes(".pi"),
+    "cli.ts references .pi directory"
+  );
+  
+  // Check that cli.ts uses homedir to construct the path
+  assert.ok(
+    cliSrc.includes("homedir()"),
+    "cli.ts uses homedir() to construct paths"
+  );
+  
+  // Check that cli.ts constructs the .pi/agent/extensions path
+  assert.match(
+    cliSrc,
+    /join\(homedir\(\),\s*['"]\.pi['"],\s*['"]agent['"],\s*['"]extensions['"]\)/,
+    "cli.ts constructs ~/.pi/agent/extensions path"
+  );
+  
+  // Check that the path is passed to DefaultResourceLoader via additionalExtensionPaths
+  assert.match(
+    cliSrc,
+    /piExtensionsDir[\s\S]*?additionalExtensionPaths[\s\S]*?\[.*?piExtensionsDir/,
+    "cli.ts passes piExtensionsDir to additionalExtensionPaths"
+  );
+});
+
+/**
+ * 11. cli.ts uses ~/.pi/agent/extensions/ path in DefaultResourceLoader
+ */
+test("cli.ts instantiates DefaultResourceLoader with ~/.pi/agent/extensions/ path", async () => {
+  const { join } = await import("node:path");
+  
+  // Verify cli.ts source constructs the .pi extensions path and passes it to DefaultResourceLoader
+  const cliSrc = readFileSync(join(projectRoot, "src", "cli.ts"), "utf-8");
+  
+  // Check that cli.ts constructs the .pi/agent/extensions path
+  assert.match(
+    cliSrc,
+    /const\s+piExtensionsDir\s*=\s*join\(homedir\(\),\s*['"]\.pi['"],\s*['"]agent['"],\s*['"]extensions['"]\)/,
+    "cli.ts constructs piExtensionsDir = join(homedir(), '.pi', 'agent', 'extensions')"
+  );
+  
+  // Check that DefaultResourceLoader is instantiated with additionalExtensionPaths including piExtensionsDir
+  assert.match(
+    cliSrc,
+    /new\s+DefaultResourceLoader\s*\(\s*\{[\s\S]*?additionalExtensionPaths\s*:\s*\[([\s\S]*?)piExtensionsDir/,
+    "cli.ts passes piExtensionsDir in additionalExtensionPaths to DefaultResourceLoader"
+  );
+});

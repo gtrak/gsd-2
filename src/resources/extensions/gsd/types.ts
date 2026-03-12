@@ -5,7 +5,7 @@
 // ─── Enums & Literal Unions ────────────────────────────────────────────────
 
 export type RiskLevel = 'low' | 'medium' | 'high';
-export type Phase = 'pre-planning' | 'discussing' | 'researching' | 'planning' | 'executing' | 'verifying' | 'summarizing' | 'advancing' | 'completing-milestone' | 'replanning-slice' | 'complete' | 'paused' | 'blocked';
+export type Phase = 'pre-planning' | 'discussing' | 'researching' | 'planning' | 'executing' | 'reviewing' | 'fixing' | 'verifying' | 'summarizing' | 'advancing' | 'completing-milestone' | 'replanning-slice' | 'complete' | 'paused' | 'blocked';
 export type ContinueStatus = 'in_progress' | 'interrupted' | 'compacted';
 
 // ─── Roadmap (Milestone-level) ─────────────────────────────────────────────
@@ -177,3 +177,58 @@ export interface GSDState {
     tasks?: { done: number; total: number };
   };
 }
+
+// ─── Code Review Types ───────────────────────────────────────────────────────
+
+export type ReviewSeverity = 'critical' | 'major' | 'minor';
+
+export type ReviewStatus = 'STILL_OPEN' | 'FIXED';
+
+export interface ReviewIssue {
+  id: string;              // e.g. "C-1", "M-1", "m-1"
+  severity: ReviewSeverity;
+  description: string;
+  location: string;        // e.g., "src/auth/logout.js:15"
+  category: string;        // Plan Drift, Partial Implementation, Bug, Security, etc.
+  status?: ReviewStatus;   // From previous review cycles
+  fix?: string;
+}
+
+export interface ReviewSummary {
+  previousFixed: { critical: number; major: number; minor: number };
+  previousRemaining: { critical: number; major: number; minor: number };
+  newIssues: { critical: number; major: number; minor: number };
+  totalOpen: { critical: number; major: number; minor: number };
+  previousFixedTotal?: number;
+  previousRemainingTotal?: number;
+}
+
+export interface CodeReview {
+  cycle: number;           // 1-5
+  date: string;
+  taskId: string;
+  taskTitle: string;
+  previousIssues: ReviewIssue[];  // from previous review cycle
+  currentIssues: ReviewIssue[];  // found this cycle
+  summary: ReviewSummary;
+  status: 'ISSUES_RESOLVED' | string;  // e.g., "CYCLE_2"
+}
+
+export interface ReviewState {
+  activeTaskId: string | null;
+  cycle: number;            // current review cycle (1-5)
+  issues: ReviewIssue[];    // cumulative across cycles
+  lastReviewPath: string | null;
+}
+
+export type ReviewIssueCategory =
+  | 'Plan Drift'
+  | 'Partial Implementation'
+  | 'Incomplete Stubs'
+  | 'Useless Tests'
+  | 'Duplicate Tests'
+  | 'Code Quality'
+  | 'Bugs'
+  | 'Security'
+  | 'Performance'
+  | 'Best Practices';

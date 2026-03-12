@@ -51,6 +51,17 @@ import { ensureGitignore } from "./gitignore.js";
 import { runGSDDoctor, rebuildState } from "./doctor.js";
 import { snapshotSkills, clearSkillSnapshot } from "./skill-discovery.js";
 import {
+  clearReviewState,
+  getReviewState,
+  initReviewState,
+  isReviewComplete,
+  hasTriviallyFixableMinor,
+  needsReviewCycle,
+  parseCodeReview,
+  updateReviewState,
+} from "./code-review.js";
+import type { ReviewState, ReviewIssue } from "./types.js";
+import {
   initMetrics, resetMetrics, snapshotUnitMetrics, getLedger,
   getProjectTotals, formatCost, formatTokenCount,
 } from "./metrics.js";
@@ -529,6 +540,20 @@ export async function handleAgentEnd(
     }
   }
 
+  // After execute-task completes, check if code review is enabled and needed
+  if (currentUnit?.type === "execute-task") {
+    const prefs = loadEffectiveGSDPreferences()?.preferences;
+    if (prefs?.code_review_enabled) {
+      const parts = currentUnit.id.split("/");
+      const mid = parts[0];
+      const sid = parts[1];
+      const tid = parts[2];
+      if (mid && sid && tid && needsReviewCycle(basePath, mid, sid, tid)) {
+        initReviewState(basePath, mid, sid, tid);
+      }
+    }
+  }
+
   // In step mode, pause and show a wizard instead of immediately dispatching
   if (stepMode) {
     await showStepWizard(ctx, pi);
@@ -653,6 +678,8 @@ function unitVerb(unitType: string): string {
     case "replan-slice": return "replanning";
     case "reassess-roadmap": return "reassessing";
     case "run-uat": return "running UAT";
+    case "review-task": return "reviewing";
+    case "fix-task": return "fixing";
     default: return unitType;
   }
 }
@@ -668,6 +695,8 @@ function unitPhaseLabel(unitType: string): string {
     case "replan-slice": return "REPLAN";
     case "reassess-roadmap": return "REASSESS";
     case "run-uat": return "UAT";
+    case "review-task": return "REVIEW";
+    case "fix-task": return "FIX";
     default: return unitType.toUpperCase();
   }
 }
@@ -684,6 +713,8 @@ function peekNext(unitType: string, state: GSDState): string {
     case "replan-slice": return `re-execute ${sid}`;
     case "reassess-roadmap": return "advance to next slice";
     case "run-uat": return "reassess roadmap";
+    case "review-task": return "fix issues";
+    case "fix-task": return "re-review";
     default: return "";
   }
 }
@@ -1114,6 +1145,48 @@ async function dispatchNextUnit(
   // can perform the UAT manually. On next resume, result file will exist → skip.
   let pauseAfterUatDispatch = false;
 
+  // Helper: dispatch a code review task
+  async function dispatchReviewTask(
+    mid: string,
+    sid: string,
+    tid: string,
+  ): Promise<{ unitType: string; unitId: string; prompt: string } | null> {
+    const sTitle = state.activeSlice?.title ?? sid;
+    const tTitle = state.activeTask?.title ?? tid;
+    return {
+      unitType: "review-task",
+      unitId: `${mid}/${sid}/${tid}`,
+      prompt: await buildReviewTaskPrompt(mid, sid, sTitle, tid, tTitle, basePath),
+    };
+  }
+
+  // Helper: dispatch a fix task for code review issues
+  async function dispatchFixTask(
+    mid: string,
+    sid: string,
+    tid: string,
+    reviewState: ReviewState,
+  ): Promise<{ unitType: string; unitId: string; prompt: string } | null> {
+    const sTitle = state.activeSlice?.title ?? sid;
+    const tTitle = state.activeTask?.title ?? tid;
+    return {
+      unitType: "fix-task",
+      unitId: `${mid}/${sid}/${tid}`,
+      prompt: await buildFixTaskPrompt(mid, sid, sTitle, tid, tTitle, reviewState, basePath),
+    };
+  }
+
+  // Check for pending code review
+  let pendingReview: { mid: string; sid: string; tid: string; reviewState: ReviewState } | null = null;
+  if (state.phase === "executing" && state.activeTask) {
+    const tid = state.activeTask.id;
+    const sid = state.activeSlice!.id;
+    const reviewState = getReviewState(basePath, mid, sid, tid);
+    if (reviewState) {
+      pendingReview = { mid, sid, tid, reviewState };
+    }
+  }
+
   // ── Phase-first dispatch: complete-slice MUST run before reassessment ──
   // If the current phase is "summarizing", complete-slice is responsible for
   // mergeSliceToMain. Reassessment must wait until the merge is done.
@@ -1206,6 +1279,25 @@ async function dispatchNextUnit(
       unitId = `${mid}/${sid}`;
       prompt = await buildReplanSlicePrompt(mid, midTitle!, sid, sTitle, basePath);
 
+
+    } else if (pendingReview) {
+      // Review cycle: check if we need to review or fix
+      const { mid: rm, sid: rs, tid: rt, reviewState } = pendingReview;
+      if (reviewState.status === "pending_review") {
+        const result = await dispatchReviewTask(rm, rs, rt);
+        if (result) {
+          unitType = result.unitType;
+          unitId = result.unitId;
+          prompt = result.prompt;
+        }
+      } else if (reviewState.status === "fixing") {
+        const result = await dispatchFixTask(rm, rs, rt, reviewState);
+        if (result) {
+          unitType = result.unitType;
+          unitId = result.unitId;
+          prompt = result.prompt;
+        }
+      }
     } else if (state.phase === "executing" && state.activeTask) {
       // Execute next task
       const sid = state.activeSlice!.id;
@@ -2735,7 +2827,40 @@ function diagnoseExpectedArtifact(unitType: string, unitId: string, base: string
       return `${relSliceFile(base, mid!, sid!, "UAT-RESULT")} (UAT result)`;
     case "complete-milestone":
       return `${relMilestoneFile(base, mid!, "SUMMARY")} (milestone summary)`;
+    case "review-task":
+      return `${relTaskFile(base, mid!, sid!, tid!, "REVIEW")} (code review)`;
+    case "fix-task":
+      return `${relTaskFile(base, mid!, sid!, tid!, "FIX")} (code review fixes)`;
     default:
       return null;
   }
+}
+
+// ─── Code Review Prompt Builders ───────────────────────────────────────────
+
+/** Build prompt for code review task */
+async function buildReviewTaskPrompt(
+  mid: string,
+  sid: string,
+  sTitle: string,
+  tid: string,
+  tTitle: string,
+  base: string,
+): Promise<string> {
+  const prompt = await loadPrompt('review-task', { mid, sid, sTitle, tid, tTitle, basePath: base });
+  return prompt;
+}
+
+/** Build prompt for fix task after code review */
+async function buildFixTaskPrompt(
+  mid: string,
+  sid: string,
+  sTitle: string,
+  tid: string,
+  tTitle: string,
+  reviewState: ReviewState,
+  base: string,
+): Promise<string> {
+  const prompt = await loadPrompt('fix-task', { mid, sid, sTitle, tid, tTitle, reviewState, basePath: base });
+  return prompt;
 }

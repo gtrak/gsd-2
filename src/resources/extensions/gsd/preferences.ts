@@ -22,6 +22,8 @@ export interface GSDModelConfig {
   planning?: string;   // e.g. "claude-opus-4-6"
   execution?: string;  // e.g. "claude-sonnet-4-6"
   completion?: string; // e.g. "claude-sonnet-4-6"
+  code_review?: string; // Code reviews can use a different model
+  code_review_fix?: string; // Fix cycles can use a different model
 }
 
 export type SkillDiscoveryMode = "auto" | "suggest" | "off";
@@ -54,6 +56,10 @@ export interface GSDPreferences {
   budget_ceiling?: number;
   remote_questions?: RemoteQuestionsConfig;
   git?: GitPreferences;
+  code_review_enabled?: boolean;
+  code_review_max_cycles?: number;
+  code_review_model?: string;
+  code_review_fix_model?: string;
 }
 
 export interface LoadedGSDPreferences {
@@ -478,6 +484,10 @@ export function resolveModelForUnit(unitType: string): string | undefined {
       return m.planning;
     case "execute-task":
       return m.execution;
+    case "fix-task":
+      return m.code_review_fix ?? prefs.preferences.code_review_fix_model ?? m.execution;
+    case "review-task":
+      return m.code_review ?? prefs.preferences.code_review_model ?? m.execution;
     case "complete-slice":
     case "run-uat":
       return m.completion;

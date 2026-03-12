@@ -200,7 +200,7 @@ Both terminals read and write the same `.gsd/` files on disk. Your decisions in 
 
 ### First launch
 
-On first run, GSD prompts for optional API keys (Brave Search, Google Gemini, Context7, Jina, Tavily) for web research and documentation tools. All optional — press Enter to skip any.
+On first run, GSD launches a branded setup wizard that walks you through LLM provider selection (OAuth or API key), then optional tool API keys (Brave Search, Context7, Jina, Slack, Discord). Every step is skippable — press Enter to skip any. Run `gsd config` anytime to re-run the wizard.
 
 ### Commands
 
@@ -223,6 +223,7 @@ On first run, GSD prompts for optional API keys (Brave Search, Google Gemini, Co
 | `Ctrl+Alt+G` | Toggle dashboard overlay |
 | `Ctrl+Alt+V` | Toggle voice transcription |
 | `Ctrl+Alt+B` | Show background shell processes |
+| `gsd config` | Re-run the setup wizard (LLM provider + tool keys) |
 
 ---
 
@@ -360,7 +361,8 @@ GSD is a TypeScript application that embeds the Pi coding agent SDK.
 gsd (CLI binary)
   └─ loader.ts          Sets PI_PACKAGE_DIR, GSD env vars, dynamic-imports cli.ts
       └─ cli.ts         Wires SDK managers, loads extensions, starts InteractiveMode
-          ├─ wizard.ts       First-run API key collection (Brave/Gemini/Context7/Jina)
+          ├─ onboarding.ts   First-run setup wizard (LLM provider + tool keys)
+          ├─ wizard.ts       Env hydration from stored auth.json credentials
           ├─ app-paths.ts    ~/.gsd/agent/, ~/.gsd/sessions/, auth.json
           ├─ resource-loader.ts  Syncs bundled extensions + agents to ~/.gsd/agent/
           └─ src/resources/

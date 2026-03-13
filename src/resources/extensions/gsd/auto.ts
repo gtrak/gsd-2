@@ -2964,7 +2964,7 @@ function diagnoseExpectedArtifact(unitType: string, unitId: string, base: string
 // ─── Code Review Prompt Builders ───────────────────────────────────────────
 
 /** Build prompt for code review task */
-async function buildReviewTaskPrompt(
+export async function buildReviewTaskPrompt(
   mid: string,
   sid: string,
   sTitle: string,
@@ -2972,12 +2972,28 @@ async function buildReviewTaskPrompt(
   tTitle: string,
   base: string,
 ): Promise<string> {
-  const prompt = await loadPrompt('review-task', { mid, sid, sTitle, tid, tTitle, basePath: base });
+  const reviewResultPath = relTaskFile(base, mid, sid, tid, "REVIEW");
+  const taskPlanPath = relTaskFile(base, mid, sid, tid, "PLAN");
+  const taskSummaryPath = relTaskFile(base, mid, sid, tid, "SUMMARY");
+  const previousReviewPath = relTaskFile(base, mid, sid, tid, "REVIEW");
+
+  const prompt = await loadPrompt('review-task', {
+    taskId: tid,
+    taskTitle: tTitle,
+    sliceId: sid,
+    reviewResultPath,
+    inlinedContext: "",
+    taskPlanPath,
+    taskSummaryPath,
+    previousReviewPath,
+    milestoneId: mid,
+    cycle: 1,
+  });
   return prompt;
 }
 
 /** Build prompt for fix task after code review */
-async function buildFixTaskPrompt(
+export async function buildFixTaskPrompt(
   mid: string,
   sid: string,
   sTitle: string,
@@ -2986,6 +3002,17 @@ async function buildFixTaskPrompt(
   reviewState: ReviewState,
   base: string,
 ): Promise<string> {
-  const prompt = await loadPrompt('fix-task', { mid, sid, sTitle, tid, tTitle, reviewState, basePath: base });
+  const reviewPath = reviewState.lastReviewPath ?? relTaskFile(base, mid, sid, tid, "REVIEW");
+  const taskSummaryPath = relTaskFile(base, mid, sid, tid, "SUMMARY");
+
+  const prompt = await loadPrompt('fix-task', {
+    taskId: tid,
+    taskTitle: tTitle,
+    cycle: reviewState.cycle,
+    inlinedContext: "",
+    reviewPath,
+    reviewContent: "",
+    taskSummaryPath,
+  });
   return prompt;
 }

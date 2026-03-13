@@ -176,6 +176,7 @@ export interface GSDState {
     slices?: { done: number; total: number };
     tasks?: { done: number; total: number };
   };
+  extensions?: Record<string, unknown>;
 }
 
 // ─── Code Review Types ───────────────────────────────────────────────────────

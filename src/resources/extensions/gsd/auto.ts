@@ -1811,7 +1811,7 @@ async function inlineGsdRootFile(
 
 // ─── Prompt Builders ──────────────────────────────────────────────────────────
 
-async function buildResearchMilestonePrompt(mid: string, midTitle: string, base: string): Promise<string> {
+export async function buildResearchMilestonePrompt(mid: string, midTitle: string, base: string): Promise<string> {
   const contextPath = resolveMilestoneFile(base, mid, "CONTEXT");
   const contextRel = relMilestoneFile(base, mid, "CONTEXT");
 
@@ -1839,7 +1839,7 @@ async function buildResearchMilestonePrompt(mid: string, midTitle: string, base:
   });
 }
 
-async function buildPlanMilestonePrompt(mid: string, midTitle: string, base: string): Promise<string> {
+export async function buildPlanMilestonePrompt(mid: string, midTitle: string, base: string): Promise<string> {
   const contextPath = resolveMilestoneFile(base, mid, "CONTEXT");
   const contextRel = relMilestoneFile(base, mid, "CONTEXT");
   const researchPath = resolveMilestoneFile(base, mid, "RESEARCH");
@@ -1875,7 +1875,7 @@ async function buildPlanMilestonePrompt(mid: string, midTitle: string, base: str
   });
 }
 
-async function buildResearchSlicePrompt(
+export async function buildResearchSlicePrompt(
   mid: string, _midTitle: string, sid: string, sTitle: string, base: string,
 ): Promise<string> {
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
@@ -1916,7 +1916,7 @@ async function buildResearchSlicePrompt(
   });
 }
 
-async function buildPlanSlicePrompt(
+export async function buildPlanSlicePrompt(
   mid: string, _midTitle: string, sid: string, sTitle: string, base: string,
 ): Promise<string> {
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
@@ -1953,7 +1953,7 @@ async function buildPlanSlicePrompt(
   });
 }
 
-async function buildExecuteTaskPrompt(
+export async function buildExecuteTaskPrompt(
   mid: string, sid: string, sTitle: string,
   tid: string, tTitle: string, base: string,
 ): Promise<string> {
@@ -2015,7 +2015,7 @@ async function buildExecuteTaskPrompt(
   });
 }
 
-async function buildCompleteSlicePrompt(
+export async function buildCompleteSlicePrompt(
   mid: string, _midTitle: string, sid: string, sTitle: string, base: string,
 ): Promise<string> {
 
@@ -2061,7 +2061,7 @@ async function buildCompleteSlicePrompt(
   });
 }
 
-async function buildCompleteMilestonePrompt(
+export async function buildCompleteMilestonePrompt(
   mid: string, midTitle: string, base: string,
 ): Promise<string> {
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
@@ -2110,7 +2110,7 @@ async function buildCompleteMilestonePrompt(
 
 // ─── Replan Slice Prompt ───────────────────────────────────────────────────────
 
-async function buildReplanSlicePrompt(
+export async function buildReplanSlicePrompt(
   mid: string, midTitle: string, sid: string, sTitle: string, base: string,
 ): Promise<string> {
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");

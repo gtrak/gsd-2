@@ -2513,7 +2513,7 @@ function ensurePreconditions(
 
 // ─── Diagnostics ──────────────────────────────────────────────────────────────
 
-async function emitObservabilityWarnings(
+export async function emitObservabilityWarnings(
   ctx: ExtensionContext,
   unitType: string,
   unitId: string,

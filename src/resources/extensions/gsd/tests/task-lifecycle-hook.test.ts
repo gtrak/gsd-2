@@ -86,6 +86,63 @@ console.log("\n=== summarizeMustHaves: all checked ===");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// checkSummaryMentionsMustHaves tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+console.log("\n=== checkSummaryMentionsMustHaves: all mentioned ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const mustHaves = [
+    { text: "Implement `validateEmail` function", checked: false },
+    { text: "Add error handling for empty input", checked: false },
+  ];
+  const summary = `
+    Summary of work done:
+    - Implemented the validateEmail function with regex validation
+    - Added comprehensive error handling for empty input cases
+  `;
+  const result = (hook as any).checkSummaryMentionsMustHaves(mustHaves, summary);
+  assertEq(result, true, "should return true when all must-haves mentioned");
+}
+
+console.log("\n=== checkSummaryMentionsMustHaves: partial mention ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const mustHaves = [
+    { text: "Implement `validateEmail` function", checked: false },
+    { text: "Add error handling for empty input", checked: false },
+  ];
+  const summary = `
+    Summary of work done:
+    - Implemented the validateEmail function
+    - Other work completed
+  `;
+  const result = (hook as any).checkSummaryMentionsMustHaves(mustHaves, summary);
+  assertEq(result, false, "should return false when not all must-haves mentioned");
+}
+
+console.log("\n=== checkSummaryMentionsMustHaves: empty must-haves ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const result = (hook as any).checkSummaryMentionsMustHaves([], "Some summary");
+  assertEq(result, true, "should return true when no must-haves to check");
+}
+
+console.log("\n=== checkSummaryMentionsMustHaves: significant word matching ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const mustHaves = [
+    { text: "Implement user authentication system", checked: false },
+  ];
+  const summary = `
+    Work completed:
+    - Built the authentication system for users
+  `;
+  const result = (hook as any).checkSummaryMentionsMustHaves(mustHaves, summary);
+  assertEq(result, true, "should match significant words (authentication)");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Summary
 // ═══════════════════════════════════════════════════════════════════════════
 

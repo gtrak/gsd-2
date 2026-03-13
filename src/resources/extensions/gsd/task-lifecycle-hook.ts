@@ -4,7 +4,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { promises as fs } from "node:fs";
-import { parseTaskPlanMustHaves } from "./files.js";
+import { parseTaskPlanMustHaves, countMustHavesMentionedInSummary } from "./files.js";
 import type { GSDMiddleware, HookContext } from "./hooks.js";
 import type { GSDState } from "./types.js";
 
@@ -199,8 +199,8 @@ export class TaskLifecycleHook {
     mustHaves: MustHaveItem[],
     summary: string
   ): boolean {
-    // Implementation in Task 2.5
-    return true;
+    const mentionedCount = countMustHavesMentionedInSummary(mustHaves, summary);
+    return mentionedCount === mustHaves.length;
   }
 
   /**

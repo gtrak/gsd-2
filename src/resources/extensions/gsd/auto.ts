@@ -2174,7 +2174,7 @@ async function buildReplanSlicePrompt(
  * - The last completed slice already has an assessment file
  * - All slices are complete (milestone done — no point reassessing)
  */
-async function checkNeedsReassessment(
+export async function checkNeedsReassessment(
   base: string, mid: string, state: GSDState,
 ): Promise<{ sliceId: string } | null> {
   const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
@@ -2302,7 +2302,7 @@ export async function buildRunUatPrompt(
   });
 }
 
-async function buildReassessRoadmapPrompt(
+export async function buildReassessRoadmapPrompt(
   mid: string, midTitle: string, completedSliceId: string, base: string,
 ): Promise<string> {
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");

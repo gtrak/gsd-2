@@ -82,6 +82,8 @@ import type { GitPreferences } from "./git-service.ts";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { makeUI, GLYPH, INDENT } from "../shared/ui.js";
 import { showNextAction } from "../shared/next-action-ui.js";
+import { TaskLifecycleHook } from "./task-lifecycle-hook.js";
+import { registerHook, getRegisteredHooks, executeMiddlewareChain } from "./hooks.js";
 
 // ─── Disk-backed completed-unit helpers ───────────────────────────────────────
 
@@ -1121,6 +1123,58 @@ async function dispatchNextUnit(
         }
       }
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Hook Integration - Execute middleware chain before dispatch
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Register task lifecycle hook if not already registered
+  if (getRegisteredHooks().length === 0) {
+    const lifecycleHook = new TaskLifecycleHook(basePath, pi, ctx);
+    registerHook({
+      name: "task-lifecycle",
+      middleware: lifecycleHook.asMiddleware(),
+      priority: 75, // High priority to run early
+    });
+  }
+
+  // Execute middleware chain to allow hooks to modify state
+  const hookContext = await executeMiddlewareChain(state, {
+    basePath,
+    pi,
+    ctx,
+    state,
+    resolveTaskFile: (filename: string): string | null => {
+      const mid = state.activeMilestone?.id;
+      const sid = state.activeSlice?.id;
+      const tid = state.activeTask?.id;
+      if (!mid || !sid || !tid) return null;
+      return resolveTaskFile(basePath, mid, sid, tid, filename.replace(/\.md$/, "").toUpperCase());
+    },
+    resolveSliceFile: (filename: string): string | null => {
+      const mid = state.activeMilestone?.id;
+      const sid = state.activeSlice?.id;
+      if (!mid || !sid) return null;
+      return resolveSliceFile(basePath, mid, sid, filename.replace(/\.md$/, "").toUpperCase());
+    },
+    resolveMilestoneFile: (filename: string): string | null => {
+      const mid = state.activeMilestone?.id;
+      if (!mid) return null;
+      return resolveMilestoneFile(basePath, mid, filename.replace(/\.md$/, "").toUpperCase());
+    },
+  });
+
+  // Use working state from hooks for dispatch decisions
+  const workingState = hookContext.workingState;
+
+  // Check if a hook made a dispatch decision
+  if (hookContext.decision) {
+    ctx.ui.notify(
+      `Hook "${hookContext.decision.unitType}" override: ${hookContext.decision.unitId}`,
+      "info"
+    );
+    // For now, just log the decision. Full implementation would dispatch it.
   }
 
   // Determine next unit

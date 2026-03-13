@@ -84,6 +84,8 @@ import { makeUI, GLYPH, INDENT } from "../shared/ui.js";
 import { showNextAction } from "../shared/next-action-ui.js";
 import { TaskLifecycleHook } from "./task-lifecycle-hook.js";
 import { registerHook, getRegisteredHooks, executeMiddlewareChain } from "./hooks.js";
+import { composeDispatchMiddlewares } from "./middleware/index.js";
+import type { DispatchContext, DispatchDecision } from "./middleware/types.js";
 
 // ─── Disk-backed completed-unit helpers ───────────────────────────────────────
 
@@ -1015,6 +1017,334 @@ function getRoadmapSlicesSync(): { done: number; total: number; activeSliceTasks
 
 // ─── Core Loop ────────────────────────────────────────────────────────────────
 
+/**
+ * Execute the dispatch middleware chain.
+ * This is the new middleware-based dispatch flow.
+ */
+async function executeDispatchMiddlewares(
+  state: GSDState,
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+): Promise<DispatchContext> {
+  const middlewares = composeDispatchMiddlewares();
+
+  // Create initial context
+  const dispatchContext: DispatchContext = {
+    basePath,
+    pi,
+    ctx,
+    state,
+    workingState: structuredClone ? structuredClone(state) : JSON.parse(JSON.stringify(state)),
+    completedKeySet,
+    getCompletedKey: (unitType: string, unitId: string) => `${unitType}/${unitId}`,
+    isUnitCompleted: (unitType: string, unitId: string) => {
+      const key = `${unitType}/${unitId}`;
+      return completedKeySet.has(key);
+    },
+    // Add file resolution helpers
+    resolveTaskFile: (filename: string): string | null => {
+      const mid = state.activeMilestone?.id;
+      const sid = state.activeSlice?.id;
+      const tid = state.activeTask?.id;
+      if (!mid || !sid || !tid) return null;
+      return resolveTaskFile(basePath, mid, sid, tid, filename.replace(/\.md$/, "").toUpperCase());
+    },
+    resolveSliceFile: (filename: string): string | null => {
+      const mid = state.activeMilestone?.id;
+      const sid = state.activeSlice?.id;
+      if (!mid || !sid) return null;
+      return resolveSliceFile(basePath, mid, sid, filename.replace(/\.md$/, "").toUpperCase());
+    },
+    resolveMilestoneFile: (filename: string): string | null => {
+      const mid = state.activeMilestone?.id;
+      if (!mid) return null;
+      return resolveMilestoneFile(basePath, mid, filename.replace(/\.md$/, "").toUpperCase());
+    },
+    getExtensionData: <T>(hookName: string): T | undefined => {
+      return dispatchContext.workingState.extensions?.[hookName] as T | undefined;
+    },
+    setExtensionData: <T>(hookName: string, data: T): void => {
+      if (!dispatchContext.workingState.extensions) {
+        dispatchContext.workingState.extensions = {};
+      }
+      dispatchContext.workingState.extensions[hookName] = data;
+    },
+  };
+
+  // Execute middleware chain
+  let index = 0;
+  async function next(): Promise<void> {
+    if (dispatchContext.decision) return;
+    const middleware = middlewares[index++];
+    if (!middleware) return;
+    await middleware(dispatchContext, next);
+  }
+
+  await next();
+  return dispatchContext;
+}
+
+/**
+ * Helper function to continue with dispatch after a decision is made.
+ * This is called when a middleware or hook makes a dispatch decision.
+ */
+async function continueWithDispatch(
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+  unitType: string,
+  unitId: string,
+  prompt: string,
+  hookMetadata: Record<string, unknown> | undefined,
+  mid: string | undefined,
+  midTitle: string | undefined,
+  state: GSDState,
+): Promise<void> {
+  // Skip observability and idempotency for hook decisions - already handled above
+  if (!hookMetadata) {
+    await emitObservabilityWarnings(ctx, unitType, unitId);
+
+    // Idempotency: skip units already completed in a prior session.
+    const idempotencyKey = `${unitType}/${unitId}`;
+    if (completedKeySet.has(idempotencyKey)) {
+      // Cross-validate: does the expected artifact actually exist?
+      const artifactExists = verifyExpectedArtifact(unitType, unitId, basePath);
+      if (artifactExists) {
+        ctx.ui.notify(
+          `Skipping ${unitType} ${unitId} — already completed in a prior session. Advancing.`,
+          "info",
+        );
+        // Yield to the event loop before re-dispatching to avoid tight recursion
+        // when many units are already completed (e.g., after crash recovery).
+        await new Promise(r => setImmediate(r));
+        await dispatchNextUnit(ctx, pi);
+        return;
+      } else {
+        // Stale completion record — artifact missing. Remove and re-run.
+        completedKeySet.delete(idempotencyKey);
+        removePersistedKey(basePath, idempotencyKey);
+        ctx.ui.notify(
+          `Re-running ${unitType} ${unitId} — marked complete but expected artifact missing.`,
+          "warning",
+        );
+      }
+    }
+  }
+
+  // Stuck detection — tracks total dispatches per unit (not just consecutive repeats).
+  // Pattern A→B→A→B would reset retryCount every time; this map catches it.
+  const dispatchKey = `${unitType}/${unitId}`;
+  const prevCount = unitDispatchCount.get(dispatchKey) ?? 0;
+  if (prevCount >= MAX_UNIT_DISPATCHES) {
+    if (currentUnit) {
+      const modelId = ctx.model?.id ?? "unknown";
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+    }
+    saveActivityLog(ctx, basePath, unitType, unitId);
+
+    const expected = diagnoseExpectedArtifact(unitType, unitId, basePath);
+    await stopAuto(ctx, pi);
+    ctx.ui.notify(
+      `Loop detected: ${unitType} ${unitId} dispatched ${prevCount + 1} times total. Expected artifact not found.${expected ? `\n   Expected: ${expected}` : ""}\n   Check branch state and .gsd/ artifacts.`,
+      "error",
+    );
+    return;
+  }
+  unitDispatchCount.set(dispatchKey, prevCount + 1);
+  if (prevCount > 0) {
+    ctx.ui.notify(
+      `${unitType} ${unitId} didn't produce expected artifact. Retrying (${prevCount + 1}/${MAX_UNIT_DISPATCHES}).`,
+      "warning",
+    );
+  }
+  // Snapshot metrics + activity log for the PREVIOUS unit before we reassign.
+  // The session still holds the previous unit's data (newSession hasn't fired yet).
+  if (currentUnit) {
+    const modelId = ctx.model?.id ?? "unknown";
+    snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+    saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+
+    // Only mark the previous unit as completed if:
+    // 1. We're not about to re-dispatch the same unit (retry scenario)
+    // 2. The expected artifact actually exists on disk
+    const closeoutKey = `${currentUnit.type}/${currentUnit.id}`;
+    const incomingKey = `${unitType}/${unitId}`;
+    const artifactVerified = verifyExpectedArtifact(currentUnit.type, currentUnit.id, basePath);
+    if (closeoutKey !== incomingKey && artifactVerified) {
+      persistCompletedKey(basePath, closeoutKey);
+      completedKeySet.add(closeoutKey);
+
+      completedUnits.push({
+        type: currentUnit.type,
+        id: currentUnit.id,
+        startedAt: currentUnit.startedAt,
+        finishedAt: Date.now(),
+      });
+      clearUnitRuntimeRecord(basePath, currentUnit.type, currentUnit.id);
+      unitDispatchCount.delete(`${currentUnit.type}/${currentUnit.id}`);
+      unitRecoveryCount.delete(`${currentUnit.type}/${currentUnit.id}`);
+    }
+  }
+  currentUnit = { type: unitType, id: unitId, startedAt: Date.now() };
+  writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+    phase: "dispatched",
+    wrapupWarningSent: false,
+    timeoutAt: null,
+    lastProgressAt: currentUnit.startedAt,
+    progressCount: 0,
+    lastProgressKind: "dispatch",
+  });
+
+  // Status bar + progress widget
+  ctx.ui.setStatus("gsd-auto", "auto");
+  if (mid) updateSliceProgressCache(basePath, mid, state.activeSlice?.id);
+  updateProgressWidget(ctx, unitType, unitId, state);
+
+  // Ensure preconditions — create directories, branches, etc.
+  // so the LLM doesn't have to get these right
+  ensurePreconditions(unitType, unitId, basePath, state);
+
+  // Fresh session
+  const result = await cmdCtx!.newSession();
+  if (result.cancelled) {
+    await stopAuto(ctx, pi);
+    ctx.ui.notify("New session cancelled — auto-mode stopped.", "warning");
+    return;
+  }
+
+  // Write lock AFTER newSession so we capture the session file path.
+  // Pi appends entries incrementally via appendFileSync, so on crash the
+  // session file survives with every tool call up to the crash point.
+  const sessionFile = ctx.sessionManager.getSessionFile();
+  writeLock(basePath, unitType, unitId, completedUnits.length, sessionFile);
+
+  // On crash recovery, prepend the full recovery briefing
+  // On retry (stuck detection), prepend deep diagnostic from last attempt
+  let finalPrompt = prompt;
+  if (pendingCrashRecovery) {
+    finalPrompt = `${pendingCrashRecovery}\n\n---\n\n${finalPrompt}`;
+    pendingCrashRecovery = null;
+  } else if ((unitDispatchCount.get(`${unitType}/${unitId}`) ?? 0) > 1) {
+    const diagnostic = getDeepDiagnostic(basePath);
+    if (diagnostic) {
+      finalPrompt = `**RETRY — your previous attempt did not produce the required artifact.**\n\nDiagnostic from previous attempt:\n${diagnostic}\n\nFix whatever went wrong and make sure you write the required file this time.\n\n---\n\n${finalPrompt}`;
+    }
+  }
+
+  // Switch model if preferences specify one for this unit type
+  const preferredModelId = resolveModelForUnit(unitType);
+  if (preferredModelId) {
+    // Try to find the model across all providers
+    const allModels = ctx.modelRegistry.getAll();
+    const model = allModels.find(m => m.id === preferredModelId);
+    if (model) {
+      const ok = await pi.setModel(model, { persist: false });
+      if (ok) {
+        ctx.ui.notify(`Model: ${preferredModelId}`, "info");
+      }
+    }
+  }
+
+  // Start progress-aware supervision: a soft warning, an idle watchdog, and
+  // a larger hard ceiling. Productive long-running tasks may continue past the
+  // soft timeout; only idle/stalled tasks pause early.
+  clearUnitTimeout();
+  const supervisor = resolveAutoSupervisorConfig();
+  const softTimeoutMs = (supervisor.soft_timeout_minutes ?? 20) * 60 * 1000;
+  const idleTimeoutMs = (supervisor.idle_timeout_minutes ?? 10) * 60 * 1000;
+  const hardTimeoutMs = (supervisor.hard_timeout_minutes ?? 30) * 60 * 1000;
+
+  wrapupWarningHandle = setTimeout(() => {
+    wrapupWarningHandle = null;
+    if (!active || !currentUnit) return;
+    writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+      phase: "wrapup-warning-sent",
+      wrapupWarningSent: true,
+    });
+    pi.sendMessage(
+      {
+        customType: "gsd-auto-wrapup",
+        display: verbose,
+        content: [
+          "**TIME BUDGET WARNING — keep going only if progress is real.**",
+          "This unit crossed the soft time budget.",
+          "If you are making progress, continue. If not, switch to wrap-up mode now:",
+          "1. rerun the minimal required verification",
+          "2. write or update the required durable artifacts",
+          "3. mark task or slice state on disk correctly",
+          "4. leave precise resume notes if anything remains unfinished",
+        ].join("\n"),
+      },
+      { triggerTurn: true },
+    );
+  }, softTimeoutMs);
+
+  idleWatchdogHandle = setInterval(async () => {
+    if (!active || !currentUnit) return;
+    const runtime = readUnitRuntimeRecord(basePath, unitType, unitId);
+    if (!runtime) return;
+    if (Date.now() - runtime.lastProgressAt < idleTimeoutMs) return;
+
+    // Before triggering recovery, check if the agent is actually producing
+    // work on disk.  `git status --porcelain` is cheap and catches any
+    // staged/unstaged/untracked changes the agent made since lastProgressAt.
+    if (detectWorkingTreeActivity(basePath)) {
+      writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+        lastProgressAt: Date.now(),
+        lastProgressKind: "filesystem-activity",
+      });
+      return;
+    }
+
+    if (currentUnit) {
+      const modelId = ctx.model?.id ?? "unknown";
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+    }
+    saveActivityLog(ctx, basePath, unitType, unitId);
+
+    const recovery = await recoverTimedOutUnit(ctx, pi, unitType, unitId, "idle");
+    if (recovery === "recovered") return;
+
+    writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+      phase: "paused",
+    });
+    ctx.ui.notify(
+      `Unit ${unitType} ${unitId} made no meaningful progress for ${(supervisor.idle_timeout_minutes ?? 10)}min. Pausing auto-mode.`,
+      "warning",
+    );
+    await pauseAuto(ctx, pi);
+  }, 15000);
+
+  unitTimeoutHandle = setTimeout(async () => {
+    unitTimeoutHandle = null;
+    if (!active) return;
+    if (currentUnit) {
+      writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+        phase: "timeout",
+        timeoutAt: Date.now(),
+      });
+      const modelId = ctx.model?.id ?? "unknown";
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+    }
+    saveActivityLog(ctx, basePath, unitType, unitId);
+
+    const recovery = await recoverTimedOutUnit(ctx, pi, unitType, unitId, "hard");
+    if (recovery === "recovered") return;
+
+    ctx.ui.notify(
+      `Unit ${unitType} ${unitId} exceeded ${(supervisor.hard_timeout_minutes ?? 30)}min hard timeout. Pausing auto-mode.`,
+      "warning",
+    );
+    await pauseAuto(ctx, pi);
+  }, hardTimeoutMs);
+
+  // Inject prompt — verify auto-mode still active (guards against race with timeout/pause)
+  if (!active) return;
+  pi.sendMessage(
+    { customType: "gsd-auto", content: finalPrompt, display: verbose },
+    { triggerTurn: true },
+  );
+}
+
 async function dispatchNextUnit(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
@@ -1129,7 +1459,7 @@ async function dispatchNextUnit(
   // Hook Integration - Execute middleware chain before dispatch
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Register task lifecycle hook if not already registered
+  // Register task lifecycle hook if not already registered (backward compatibility)
   if (getRegisteredHooks().length === 0) {
     const lifecycleHook = new TaskLifecycleHook(basePath, pi, ctx);
     registerHook({
@@ -1139,7 +1469,93 @@ async function dispatchNextUnit(
     });
   }
 
-  // Execute middleware chain to allow hooks to modify state
+  // Execute the new dispatch middleware chain
+  const dispatchContext = await executeDispatchMiddlewares(state, ctx, pi);
+
+  // Use working state from middleware chain for dispatch decisions
+  const workingState = dispatchContext.workingState;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Special Decision Handling
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Check for special decisions from the middleware chain
+  if (dispatchContext.decision) {
+    const { decision } = dispatchContext;
+
+    // Handle SKIP_DECISION (from idempotency middleware)
+    if (decision.unitType === "skip" && decision.metadata?.skip) {
+      ctx.ui.notify(
+        `Skipping unit — already completed. Advancing.`,
+        "info"
+      );
+      await dispatchNextUnit(ctx, pi);
+      return;
+    }
+
+    // Handle PAUSE_DECISION (from budget-ceiling middleware)
+    if (decision.unitType === "pause" && decision.metadata?.reason === "budget_ceiling_reached") {
+      ctx.ui.notify(
+        `Budget ceiling reached. Pausing auto-mode — /gsd auto to continue.`,
+        "warning"
+      );
+      await pauseAuto(ctx, pi);
+      return;
+    }
+
+    // Handle MERGE_ERROR_DECISION (from merge-guard middleware)
+    if (decision.unitType === "error" && decision.metadata?.reason === "slice_merge_failed") {
+      const errorMsg = decision.metadata?.error as string;
+      ctx.ui.notify(
+        `Slice merge failed — stopping auto-mode. Fix conflicts manually and restart.\n${errorMsg}`,
+        "error"
+      );
+      if (currentUnit) {
+        const modelId = ctx.model?.id ?? "unknown";
+        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+        saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+      }
+      await stopAuto(ctx, pi);
+      return;
+    }
+
+    // Handle regular dispatch decision from middleware
+    if (decision.unitType && decision.unitId && decision.prompt) {
+      ctx.ui.notify(
+        `Middleware decision: ${decision.unitType} ${decision.unitId}`,
+        "info"
+      );
+
+      let unitType: string = decision.unitType;
+      let unitId: string = decision.unitId;
+      let prompt: string = decision.prompt;
+      const hookMetadata: Record<string, unknown> | undefined = decision.metadata;
+
+      // Emit observability warnings for the middleware's chosen unit
+      await emitObservabilityWarnings(ctx, unitType, unitId);
+
+      // Idempotency check for middleware decision
+      const idempotencyKey = `${unitType}/${unitId}`;
+      if (completedKeySet.has(idempotencyKey)) {
+        ctx.ui.notify(
+          `Skipping ${unitType} ${unitId} — already completed (middleware decision).`,
+          "info"
+        );
+        await dispatchNextUnit(ctx, pi);
+        return;
+      }
+
+      // Dispatch the unit normally
+      continueWithDispatch(ctx, pi, unitType, unitId, prompt, hookMetadata, mid, midTitle, state);
+      return;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Backward Compatibility - Execute existing hook chain
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Execute middleware chain to allow hooks to modify state (backward compatibility)
   const hookContext = await executeMiddlewareChain(state, {
     basePath,
     pi,
@@ -1165,19 +1581,12 @@ async function dispatchNextUnit(
     },
   });
 
-  // Use working state from hooks for dispatch decisions
-  const workingState = hookContext.workingState;
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Hook Decision Override
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  let unitType: string;
-  let unitId: string;
-  let prompt: string;
+  // Check if a hook made a dispatch decision (backward compatibility)
+  let unitType: string = "";
+  let unitId: string = "";
+  let prompt: string = "";
   let hookMetadata: Record<string, unknown> | undefined;
 
-  // Check if a hook made a dispatch decision
   if (hookContext.decision) {
     ctx.ui.notify(
       `Hook "${hookContext.decision.unitType}" override: ${hookContext.decision.unitId}`,
@@ -1203,6 +1612,10 @@ async function dispatchNextUnit(
       await dispatchNextUnit(ctx, pi);
       return;
     }
+
+    // Continue with dispatch
+    continueWithDispatch(ctx, pi, unitType, unitId, prompt, hookMetadata, mid, midTitle, state);
+    return;
   }
 
   // Determine next unit (normal dispatch logic)
@@ -1592,9 +2005,9 @@ async function dispatchNextUnit(
   // soft timeout; only idle/stalled tasks pause early.
   clearUnitTimeout();
   const supervisor = resolveAutoSupervisorConfig();
-  const softTimeoutMs = supervisor.soft_timeout_minutes * 60 * 1000;
-  const idleTimeoutMs = supervisor.idle_timeout_minutes * 60 * 1000;
-  const hardTimeoutMs = supervisor.hard_timeout_minutes * 60 * 1000;
+  const softTimeoutMs = (supervisor.soft_timeout_minutes ?? 20) * 60 * 1000;
+  const idleTimeoutMs = (supervisor.idle_timeout_minutes ?? 10) * 60 * 1000;
+  const hardTimeoutMs = (supervisor.hard_timeout_minutes ?? 30) * 60 * 1000;
 
   wrapupWarningHandle = setTimeout(() => {
     wrapupWarningHandle = null;
@@ -1651,7 +2064,7 @@ async function dispatchNextUnit(
       phase: "paused",
     });
     ctx.ui.notify(
-      `Unit ${unitType} ${unitId} made no meaningful progress for ${supervisor.idle_timeout_minutes}min. Pausing auto-mode.`,
+      `Unit ${unitType} ${unitId} made no meaningful progress for ${(supervisor.idle_timeout_minutes ?? 10)}min. Pausing auto-mode.`,
       "warning",
     );
     await pauseAuto(ctx, pi);
@@ -1674,7 +2087,7 @@ async function dispatchNextUnit(
     if (recovery === "recovered") return;
 
     ctx.ui.notify(
-      `Unit ${unitType} ${unitId} exceeded ${supervisor.hard_timeout_minutes}min hard timeout. Pausing auto-mode.`,
+      `Unit ${unitType} ${unitId} exceeded ${(supervisor.hard_timeout_minutes ?? 30)}min hard timeout. Pausing auto-mode.`,
       "warning",
     );
     await pauseAuto(ctx, pi);

@@ -1168,20 +1168,44 @@ async function dispatchNextUnit(
   // Use working state from hooks for dispatch decisions
   const workingState = hookContext.workingState;
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Hook Decision Override
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  let unitType: string;
+  let unitId: string;
+  let prompt: string;
+  let hookMetadata: Record<string, unknown> | undefined;
+
   // Check if a hook made a dispatch decision
   if (hookContext.decision) {
     ctx.ui.notify(
       `Hook "${hookContext.decision.unitType}" override: ${hookContext.decision.unitId}`,
       "info"
     );
-    // For now, just log the decision. Full implementation would dispatch it.
+
+    // Use hook decision values
+    unitType = hookContext.decision.unitType;
+    unitId = hookContext.decision.unitId;
+    prompt = hookContext.decision.prompt;
+    hookMetadata = hookContext.decision.metadata;
+
+    // Emit observability warnings for the hook's chosen unit
+    await emitObservabilityWarnings(ctx, unitType, unitId);
+
+    // Idempotency check for hook decision
+    const idempotencyKey = `${unitType}/${unitId}`;
+    if (completedKeySet.has(idempotencyKey)) {
+      ctx.ui.notify(
+        `Skipping ${unitType} ${unitId} — already completed (hook decision).`,
+        "info"
+      );
+      await dispatchNextUnit(ctx, pi);
+      return;
+    }
   }
 
-  // Determine next unit
-  let unitType: string;
-  let unitId: string;
-  let prompt: string;
-
+  // Determine next unit (normal dispatch logic)
   if (state.phase === "complete") {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
@@ -1414,31 +1438,34 @@ async function dispatchNextUnit(
     }
   }
 
-  await emitObservabilityWarnings(ctx, unitType, unitId);
+  // Skip observability and idempotency for hook decisions - already handled above
+  if (!hookMetadata) {
+    await emitObservabilityWarnings(ctx, unitType, unitId);
 
-  // Idempotency: skip units already completed in a prior session.
-  const idempotencyKey = `${unitType}/${unitId}`;
-  if (completedKeySet.has(idempotencyKey)) {
-    // Cross-validate: does the expected artifact actually exist?
-    const artifactExists = verifyExpectedArtifact(unitType, unitId, basePath);
-    if (artifactExists) {
-      ctx.ui.notify(
-        `Skipping ${unitType} ${unitId} — already completed in a prior session. Advancing.`,
-        "info",
-      );
-      // Yield to the event loop before re-dispatching to avoid tight recursion
-      // when many units are already completed (e.g., after crash recovery).
-      await new Promise(r => setImmediate(r));
-      await dispatchNextUnit(ctx, pi);
-      return;
-    } else {
-      // Stale completion record — artifact missing. Remove and re-run.
-      completedKeySet.delete(idempotencyKey);
-      removePersistedKey(basePath, idempotencyKey);
-      ctx.ui.notify(
-        `Re-running ${unitType} ${unitId} — marked complete but expected artifact missing.`,
-        "warning",
-      );
+    // Idempotency: skip units already completed in a prior session.
+    const idempotencyKey = `${unitType}/${unitId}`;
+    if (completedKeySet.has(idempotencyKey)) {
+      // Cross-validate: does the expected artifact actually exist?
+      const artifactExists = verifyExpectedArtifact(unitType, unitId, basePath);
+      if (artifactExists) {
+        ctx.ui.notify(
+          `Skipping ${unitType} ${unitId} — already completed in a prior session. Advancing.`,
+          "info",
+        );
+        // Yield to the event loop before re-dispatching to avoid tight recursion
+        // when many units are already completed (e.g., after crash recovery).
+        await new Promise(r => setImmediate(r));
+        await dispatchNextUnit(ctx, pi);
+        return;
+      } else {
+        // Stale completion record — artifact missing. Remove and re-run.
+        completedKeySet.delete(idempotencyKey);
+        removePersistedKey(basePath, idempotencyKey);
+        ctx.ui.notify(
+          `Re-running ${unitType} ${unitId} — marked complete but expected artifact missing.`,
+          "warning",
+        );
+      }
     }
   }
 

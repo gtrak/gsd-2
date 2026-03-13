@@ -43,6 +43,38 @@ function assertEq<T>(actual: T, expected: T, message: string): void {
   }
 }
 
+
+async function simulateHandleAgentEndReviewTask(basePath: string, unitId: string): Promise<void> {
+  const parts = unitId.split("/");
+  const mid = parts[0];
+  const sid = parts[1];
+  const tid = parts[2];
+  if (mid && sid && tid) {
+    const reviewFile = join(basePath, ".gsd", "milestones", mid, "slices", sid, "tasks", `${tid}-CODE-REVIEW.md`);
+    try {
+      const reviewContent = readFileSync(reviewFile, "utf-8");
+      if (isReviewComplete(reviewContent)) {
+        const parsed = parseCodeReview(reviewContent);
+        if (parsed) {
+          const hasBlocking = parsed.currentIssues?.some(
+            i => i.severity === 'critical' || i.severity === 'major'
+          ) ?? false;
+          const hasTrivialMinor = hasTriviallyFixableMinor(parsed.currentIssues ?? []);
+          if (hasBlocking || hasTrivialMinor) {
+            updateReviewState(basePath, mid, sid, tid, {
+              status: 'fixing',
+              cycle: parsed.cycle,
+            });
+          } else {
+            clearReviewState(basePath, mid, sid, tid);
+          }
+        }
+      }
+    } catch {
+      // Review file not found
+    }
+  }
+}
 /**
  * Simulate the dispatch logic from auto.ts to determine next unit type.
  * This mirrors the code review dispatch logic added to dispatchNextUnit.
@@ -503,6 +535,112 @@ None.
       rmSync(base, { recursive: true, force: true });
     }
   }
+
+  // ─── (K) handleAgentEnd review-task with blocking issues triggers fix ─────────
+  {
+    console.log("\n── (K) handleAgentEnd review-task with blocking issues triggers fix");
+    const base = mkdtempSync(join(tmpdir(), "gsd-handle-agent-end-"));
+    try {
+      const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
+      mkdirSync(tasksDir, { recursive: true });
+
+      // Setup: Initialize review state (simulates execute-task completion)
+      initReviewState(base, "M001", "S01", "T01");
+
+      // Simulate review-task completing with blocking issues
+      const reviewWithBlocking = `# Code Review: T01 - Fix Parser
+**Review Cycle:** 1/5
+**Date:** 2024-01-15
+**Status:** CYCLE_1
+
+### Critical
+- [C-1] Bug in token parsing
+  - **Location:** src/parser.ts:42
+  - **Category:** Bugs
+
+### Major
+- [M-1] Missing error handling
+  - **Location:** src/parser.ts:100
+  - **Category:** Code Quality
+`;
+      writeFileSync(join(tasksDir, "T01-CODE-REVIEW.md"), reviewWithBlocking, "utf-8");
+
+      // Call the function that simulates handleAgentEnd behavior
+      await simulateHandleAgentEndReviewTask(base, "M001/S01/T01");
+
+      // Verify state was updated to 'fixing'
+      const state = getReviewState(base, "M001", "S01", "T01");
+      assert(state !== null, "review state exists after review-task");
+      assertEq(state!.status, "fixing", "status is 'fixing' after blocking issues found");
+      assertEq(state!.cycle, 1, "cycle is 1");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  }
+
+  // ─── (L) handleAgentEnd review-task with no issues clears state ─────────
+  {
+    console.log("\n── (L) handleAgentEnd review-task with no issues clears state");
+    const base = mkdtempSync(join(tmpdir(), "gsd-handle-agent-end-"));
+    try {
+      const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
+      mkdirSync(tasksDir, { recursive: true });
+
+      initReviewState(base, "M001", "S01", "T01");
+
+      // Simulate review-task completing with NO blocking issues
+      const reviewNoIssues = `# Code Review: T01 - Good
+**Review Cycle:** 1/5
+**Date:** 2024-01-15
+**Status:** ISSUES_RESOLVED
+
+### Minor
+- [m-1] Consider renaming variable (non-trivial)
+`;
+      writeFileSync(join(tasksDir, "T01-CODE-REVIEW.md"), reviewNoIssues, "utf-8");
+
+      await simulateHandleAgentEndReviewTask(base, "M001/S01/T01");
+
+      // Verify state was cleared (review passed)
+      const state = getReviewState(base, "M001", "S01", "T01");
+      assert(state === null, "review state cleared when no blocking issues");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  }
+
+  // ─── (M) handleAgentEnd review-task with trivial minor triggers fix ─────────
+  {
+    console.log("\n── (M) handleAgentEnd review-task with trivial minor triggers fix");
+    const base = mkdtempSync(join(tmpdir(), "gsd-handle-agent-end-"));
+    try {
+      const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
+      mkdirSync(tasksDir, { recursive: true });
+
+      initReviewState(base, "M001", "S01", "T01");
+
+      // Simulate review-task completing with only TRIVIAL minor issues
+      const reviewTrivialMinor = `# Code Review: T01 - Minor
+**Review Cycle:** 1/5
+**Date:** 2024-01-15
+**Status:** CYCLE_1
+
+### Minor
+- [m-1] Trivially fixable: add missing JSDoc comment
+`;
+      writeFileSync(join(tasksDir, "T01-CODE-REVIEW.md"), reviewTrivialMinor, "utf-8");
+
+      await simulateHandleAgentEndReviewTask(base, "M001/S01/T01");
+
+      // Verify state was updated to 'fixing' (trivial minor triggers fix)
+      const state = getReviewState(base, "M001", "S01", "T01");
+      assert(state !== null, "review state exists after trivial minor");
+      assertEq(state!.status, "fixing", "status is 'fixing' for trivial minor issues");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  }
+
 
   // Results
   console.log("\n========================================");

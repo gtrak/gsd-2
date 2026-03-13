@@ -554,6 +554,40 @@ export async function handleAgentEnd(
     }
   }
 
+  // After review-task completes, parse review and decide next action
+  if (currentUnit?.type === "review-task") {
+    const parts = currentUnit.id.split("/");
+    const mid = parts[0];
+    const sid = parts[1];
+    const tid = parts[2];
+    if (mid && sid && tid) {
+      const reviewFile = join(basePath, ".gsd", "milestones", mid, "slices", sid, "tasks", `${tid}-CODE-REVIEW.md`);
+      try {
+        const reviewContent = readFileSync(reviewFile, "utf-8");
+        if (isReviewComplete(reviewContent)) {
+          const parsed = parseCodeReview(reviewContent);
+          if (parsed) {
+            const hasBlocking = parsed.currentIssues?.some(
+              i => i.severity === 'critical' || i.severity === 'major'
+            ) ?? false;
+            const hasTrivialMinor = hasTriviallyFixableMinor(parsed.currentIssues ?? []);
+            if (hasBlocking || hasTrivialMinor) {
+              // Issues found - dispatch fix task
+              updateReviewState(basePath, mid, sid, tid, {
+                status: 'fixing',
+                cycle: parsed.cycle,
+              });
+            } else {
+              // No blocking issues - review passed, clear state
+              clearReviewState(basePath, mid, sid, tid);
+            }
+          }
+        }
+      } catch {
+        // Review file not found - skip
+      }
+    }
+  }
   // In step mode, pause and show a wizard instead of immediately dispatching
   if (stepMode) {
     await showStepWizard(ctx, pi);

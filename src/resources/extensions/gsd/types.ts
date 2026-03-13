@@ -217,9 +217,10 @@ export interface CodeReview {
 export interface ReviewState {
   activeTaskId: string | null;
   cycle: number;            // current review cycle (1-5)
+  status: 'pending_review' | 'fixing';  // review phase
   issues: ReviewIssue[];    // cumulative across cycles
   lastReviewPath: string | null;
-}
+};
 
 export type ReviewIssueCategory =
   | 'Plan Drift'

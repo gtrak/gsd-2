@@ -20,6 +20,7 @@ export function initReviewState(base: string, mid: string, sid: string, tid: str
   const state: ReviewState = {
     activeTaskId: tid,
     cycle: 1,
+    status: 'pending_review',
     issues: [],
     lastReviewPath: null,
   };
@@ -35,6 +36,7 @@ export function updateReviewState(base: string, mid: string, sid: string, tid: s
   const existing = getReviewState(base, mid, sid, tid) ?? {
     activeTaskId: tid,
     cycle: 1,
+    status: 'pending_review' as const,
     issues: [],
     lastReviewPath: null,
   };

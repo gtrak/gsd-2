@@ -4,6 +4,11 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { GSDState } from "./types.js";
+import {
+  resolveTaskFile as resolveTaskFilePath,
+  resolveSliceFile as resolveSliceFilePath,
+  resolveMilestoneFile as resolveMilestoneFilePath,
+} from "./paths.js";
 
 // ─── Hook Context ─────────────────────────────────────────────────────────
 
@@ -80,4 +85,99 @@ export function getRegisteredHooks(): HookRegistration[] {
  */
 export function clearRegisteredHooks(): void {
   hookRegistry.clear();
+}
+
+// ─── Middleware Chain Execution ─────────────────────────────────────────────
+
+export async function executeMiddlewareChain(
+  state: GSDState,
+  context: Omit<
+    HookContext,
+    "workingState" | "getExtensionData" | "setExtensionData" | "decision"
+  >,
+): Promise<HookContext> {
+  // Deep clone state for working copy
+  const workingState = structuredClone
+    ? structuredClone(state)
+    : JSON.parse(JSON.stringify(state));
+
+  // Initialize extensions if not present
+  if (!workingState.extensions) {
+    workingState.extensions = {};
+  }
+
+  // Build full context with helpers
+  const fullContext: HookContext = {
+    ...context,
+    workingState,
+    decision: undefined,
+    getExtensionData: <T>(hookName: string): T | undefined => {
+      return workingState.extensions?.[hookName] as T | undefined;
+    },
+    setExtensionData: <T>(hookName: string, data: T): void => {
+      if (!workingState.extensions) {
+        workingState.extensions = {};
+      }
+      workingState.extensions[hookName] = data;
+    },
+    resolveTaskFile: (filename: string): string | null => {
+      const mid = workingState.activeMilestone?.id;
+      const sid = workingState.activeSlice?.id;
+      const tid = workingState.activeTask?.id;
+      if (!mid || !sid || !tid) return null;
+      return resolveTaskFilePath(
+        context.basePath,
+        mid,
+        sid,
+        tid,
+        filename.replace(/\.md$/, "").toUpperCase(),
+      );
+    },
+    resolveSliceFile: (filename: string): string | null => {
+      const mid = workingState.activeMilestone?.id;
+      const sid = workingState.activeSlice?.id;
+      if (!mid || !sid) return null;
+      return resolveSliceFilePath(
+        context.basePath,
+        mid,
+        sid,
+        filename.replace(/\.md$/, "").toUpperCase(),
+      );
+    },
+    resolveMilestoneFile: (filename: string): string | null => {
+      const mid = workingState.activeMilestone?.id;
+      if (!mid) return null;
+      return resolveMilestoneFilePath(
+        context.basePath,
+        mid,
+        filename.replace(/\.md$/, "").toUpperCase(),
+      );
+    },
+  };
+
+  // Get hooks sorted by priority (highest first)
+  const hooks = getRegisteredHooks();
+
+  // Execute chain
+  let index = 0;
+  async function next(): Promise<void> {
+    // If decision has been made, stop the chain
+    if (fullContext.decision) {
+      return;
+    }
+
+    const hook = hooks[index++];
+    if (!hook) return;
+
+    try {
+      await hook.middleware(fullContext, next);
+    } catch (error) {
+      // Log error but continue to next hook (error isolation)
+      console.error(`Hook "${hook.name}" error:`, error);
+      await next();
+    }
+  }
+
+  await next();
+  return fullContext;
 }

@@ -42,6 +42,15 @@ export interface RemoteQuestionsConfig {
   poll_interval_seconds?: number;  // clamped to 2-30
 }
 
+export interface HooksPreferences {
+  enabled?: Array<{
+    name: string;
+    priority?: number;
+    config?: Record<string, unknown>;
+  }>;
+  disabled?: string[];
+}
+
 export interface GSDPreferences {
   version?: number;
   always_use_skills?: string[];
@@ -60,6 +69,7 @@ export interface GSDPreferences {
   code_review_max_cycles?: number;
   code_review_model?: string;
   code_review_fix_model?: string;
+  hooks?: HooksPreferences;
 }
 
 export interface LoadedGSDPreferences {

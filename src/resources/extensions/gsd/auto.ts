@@ -2215,7 +2215,7 @@ async function checkNeedsReassessment(
  * - No UAT file exists for the slice
  * - UAT result file already exists (idempotent — already ran)
  */
-async function checkNeedsRunUat(
+export async function checkNeedsRunUat(
   base: string, mid: string, state: GSDState, prefs: GSDPreferences | undefined,
 ): Promise<{ sliceId: string; uatType: UatType } | null> {
   const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
@@ -2258,7 +2258,17 @@ async function checkNeedsRunUat(
   return { sliceId: sid, uatType };
 }
 
-async function buildRunUatPrompt(
+/**
+ * Build the prompt for running UAT on a slice.
+ *
+ * @param mid - The milestone ID
+ * @param sliceId - The slice ID
+ * @param uatPath - The relative path to the UAT file
+ * @param uatContent - The content of the UAT file
+ * @param base - The base path for the project
+ * @returns A formatted prompt string for the run-uat unit
+ */
+export async function buildRunUatPrompt(
   mid: string, sliceId: string, uatPath: string, uatContent: string, base: string,
 ): Promise<string> {
   const inlined: string[] = [];

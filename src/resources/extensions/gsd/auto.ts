@@ -108,7 +108,7 @@ function persistCompletedKey(base: string, key: string): void {
 }
 
 /** Remove a stale completed unit key from disk. */
-function removePersistedKey(base: string, key: string): void {
+export function removePersistedKey(base: string, key: string): void {
   const file = completedKeysPath(base);
   try {
     if (existsSync(file)) {
@@ -2886,7 +2886,7 @@ export function resolveExpectedArtifactPath(unitType: string, unitId: string, ba
  * Returns true if the artifact file exists, or if the unit type has no
  * single verifiable artifact (e.g., replan-slice).
  */
-function verifyExpectedArtifact(unitType: string, unitId: string, base: string): boolean {
+export function verifyExpectedArtifact(unitType: string, unitId: string, base: string): boolean {
   const absPath = resolveExpectedArtifactPath(unitType, unitId, base);
   if (!absPath) return true;
   return existsSync(absPath);

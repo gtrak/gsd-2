@@ -17,6 +17,15 @@ import {
   SLICE_BRANCH_RE,
 } from "./worktree.ts";
 
+// ─── Constants ─────────────────────────────────────────────────────────────
+
+/**
+ * Regex pattern for validating git branch names.
+ * Accepts alphanumeric characters, underscores, hyphens, and dots.
+ * Rejects shell injection attempts and invalid characters.
+ */
+export const VALID_BRANCH_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 export interface GitPreferences {

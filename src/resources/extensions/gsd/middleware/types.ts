@@ -1,0 +1,119 @@
+// GSD Extension — Dispatch Middleware Types
+// Types specific to the dispatch middleware system for unit dispatch decisions.
+
+import type { HookContext } from "../hooks.js";
+
+// ─── Dispatch Decision ─────────────────────────────────────────────────────
+
+/**
+ * Represents a decision to dispatch a specific unit to the agent.
+ * Middleware can set this when it wants to dispatch a unit for processing.
+ */
+export interface DispatchDecision {
+  /**
+   * The type of unit to dispatch.
+   * Examples: "execute-task", "complete-slice", "complete-milestone"
+   */
+  unitType: string;
+
+  /**
+   * The unique identifier for the unit.
+   * Examples: "M001/S01/T01" for a task, "M001/S01" for a slice
+   */
+  unitId: string;
+
+  /**
+   * The prompt to send to the agent for this unit.
+   */
+  prompt: string;
+
+  /**
+   * Optional metadata associated with the dispatch decision.
+   */
+  metadata?: Record<string, unknown>;
+}
+
+// ─── Dispatch Context ──────────────────────────────────────────────────────
+
+/**
+ * Extended HookContext with dispatch-specific helpers for idempotency checks.
+ * Provides methods to track which units have been completed to prevent
+ * duplicate dispatch decisions.
+ */
+export interface DispatchContext extends HookContext {
+  /**
+   * Set of completed unit keys for idempotency checks.
+   * Keys are in the format: "<unitType>:<unitId>"
+   */
+  completedKeySet: Set<string>;
+
+  /**
+   * The pending dispatch decision from the auto-dispatch logic.
+   * This is set before middleware chain execution begins.
+   * Middleware can inspect this to make decisions about whether to proceed.
+   */
+  pendingDecision?: DispatchDecision;
+
+  /**
+   * Generates a unique key for a unit based on its type and ID.
+   * @param unitType - The type of unit (e.g., "execute-task")
+   * @param unitId - The unique identifier of the unit (e.g., "M001/S01/T01")
+   * @returns A string key in the format "<unitType>:<unitId>"
+   */
+  getCompletedKey(unitType: string, unitId: string): string;
+
+  /**
+   * Checks if a unit has already been completed.
+   * @param unitType - The type of unit (e.g., "execute-task")
+   * @param unitId - The unique identifier of the unit (e.g., "M001/S01/T01")
+   * @returns true if the unit has been completed, false otherwise
+   */
+  isUnitCompleted(unitType: string, unitId: string): boolean;
+}
+
+// ─── Dispatch Middleware Type ──────────────────────────────────────────────
+
+/**
+ * Middleware function type specialized for dispatch operations.
+ * Works with DispatchContext instead of the base HookContext.
+ */
+export type DispatchMiddleware = (
+  context: DispatchContext,
+  next: () => Promise<void>
+) => Promise<void>;
+
+// ─── Middleware Configuration ──────────────────────────────────────────────
+
+/**
+ * Common configuration options for middleware registration.
+ */
+export interface MiddlewareConfig {
+  /**
+   * Priority of the middleware (0-100).
+   * Higher values execute first.
+   * @default 50
+   */
+  priority: number;
+
+  /**
+   * Whether the middleware is enabled.
+   * @default true
+   */
+  enabled: boolean;
+
+  /**
+   * Name of the middleware for identification and logging.
+   */
+  name: string;
+}
+
+// ─── Middleware Factory ────────────────────────────────────────────────────
+
+/**
+ * Factory function type for creating middleware with configuration.
+ * @param config - Configuration options for the middleware
+ * @returns A DispatchMiddleware function
+ */
+export type MiddlewareFactory = (
+  config?: Partial<MiddlewareConfig>
+) => DispatchMiddleware;

@@ -38,6 +38,54 @@ console.log("\n=== TaskLifecycleHook: asMiddleware returns function ===");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// summarizeMustHaves tests (via handleExecuteTask)
+// ═══════════════════════════════════════════════════════════════════════════
+
+console.log("\n=== summarizeMustHaves: empty array ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  // Access private method
+  const result = (hook as any).summarizeMustHaves([]);
+  assertEq(result, "No must-haves defined.", "should return no must-haves message");
+}
+
+console.log("\n=== summarizeMustHaves: single unchecked ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const result = (hook as any).summarizeMustHaves([
+    { text: "Test item", checked: false },
+  ]);
+  assert(result.includes("Must-Haves (0/1 checked)"), "should show count");
+  assert(result.includes("- [ ] Test item"), "should show unchecked item");
+  assert(result.includes("1 must-have remaining"), "should show remaining count");
+}
+
+console.log("\n=== summarizeMustHaves: checked items ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const result = (hook as any).summarizeMustHaves([
+    { text: "First", checked: true },
+    { text: "Second", checked: false },
+    { text: "Third", checked: true },
+  ]);
+  assert(result.includes("Must-Haves (2/3 checked)"), "should show count");
+  assert(result.includes("- [x] First"), "should show checked item");
+  assert(result.includes("- [ ] Second"), "should show unchecked item");
+  assert(result.includes("1 must-have remaining"), "should show remaining count");
+}
+
+console.log("\n=== summarizeMustHaves: all checked ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const result = (hook as any).summarizeMustHaves([
+    { text: "First", checked: true },
+    { text: "Second", checked: true },
+  ]);
+  assert(result.includes("Must-Haves (2/2 checked)"), "should show all checked");
+  assert(!result.includes("remaining"), "should not show remaining when all checked");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Summary
 // ═══════════════════════════════════════════════════════════════════════════
 

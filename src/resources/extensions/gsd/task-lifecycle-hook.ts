@@ -3,6 +3,8 @@
 // Implements GSDMiddleware for use with executeMiddlewareChain.
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { promises as fs } from "node:fs";
+import { parseTaskPlanMustHaves } from "./files.js";
 import type { GSDMiddleware, HookContext } from "./hooks.js";
 import type { GSDState } from "./types.js";
 
@@ -156,8 +158,18 @@ export class TaskLifecycleHook {
    * Returns null if file doesn't exist or can't be read.
    */
   private async loadTaskPlan(path: string): Promise<string | null> {
-    // Implementation in Task 2.2
-    return null;
+    try {
+      const content = await fs.readFile(path, "utf-8");
+      return content;
+    } catch (err) {
+      // File doesn't exist or can't be read - return null
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return null;
+      }
+      // Log other errors but still return null
+      console.error(`Error reading task plan at ${path}:`, err);
+      return null;
+    }
   }
 
   /**
@@ -171,13 +183,12 @@ export class TaskLifecycleHook {
 
   // ─── Parsing ────────────────────────────────────────────────────────────────
 
-  /**
-   * Parse must-have items from a task plan.
-   * Returns array of must-have items with text and checked status.
-   */
+ /**
+    * Parse must-have items from a task plan.
+    * Returns array of must-have items with text and checked status.
+    */
   private parseMustHaves(taskPlan: string): MustHaveItem[] {
-    // Implementation in Task 2.3
-    return [];
+    return parseTaskPlanMustHaves(taskPlan);
   }
 
   /**
@@ -190,5 +201,34 @@ export class TaskLifecycleHook {
   ): boolean {
     // Implementation in Task 2.5
     return true;
+  }
+
+  /**
+   * Convert must-have array to human-readable summary string.
+   * Format: "- [ ] item text" style with count summary.
+   */
+  private summarizeMustHaves(mustHaves: MustHaveItem[]): string {
+    if (mustHaves.length === 0) {
+      return "No must-haves defined.";
+    }
+
+    const lines: string[] = [];
+    const checkedCount = mustHaves.filter((m) => m.checked).length;
+    const uncheckedCount = mustHaves.length - checkedCount;
+
+    lines.push(`Must-Haves (${checkedCount}/${mustHaves.length} checked):`);
+    lines.push("");
+
+    for (const mustHave of mustHaves) {
+      const checkbox = mustHave.checked ? "[x]" : "[ ]";
+      lines.push(`- ${checkbox} ${mustHave.text}`);
+    }
+
+    if (uncheckedCount > 0) {
+      lines.push("");
+      lines.push(`${uncheckedCount} must-have${uncheckedCount === 1 ? "" : "s"} remaining.`);
+    }
+
+    return lines.join("\n");
   }
 }

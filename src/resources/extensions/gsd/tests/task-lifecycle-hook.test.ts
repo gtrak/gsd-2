@@ -3,6 +3,7 @@
 import { TaskLifecycleHook, type TaskLifecycleData } from "../task-lifecycle-hook.js";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { GSDState } from "../types.js";
+import { promises as fs } from "node:fs";
 
 let passed = 0;
 let failed = 0;
@@ -140,6 +141,50 @@ console.log("\n=== checkSummaryMentionsMustHaves: significant word matching ==="
   `;
   const result = (hook as any).checkSummaryMentionsMustHaves(mustHaves, summary);
   assertEq(result, true, "should match significant words (authentication)");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// loadSummary tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+console.log("\n=== loadSummary: returns content when file exists ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  // Mock fs.readFile by temporarily replacing it
+  const originalReadFile = fs.readFile;
+  (fs as any).readFile = async () => "# Summary\n\nWork completed.";
+  
+  const result = await (hook as any).loadSummary("/test/summary.md");
+  assertEq(result, "# Summary\n\nWork completed.", "should return file content");
+  
+  // Restore original
+  (fs as any).readFile = originalReadFile;
+}
+
+console.log("\n=== loadSummary: returns null when file not found ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const originalReadFile = fs.readFile;
+  const error = new Error("File not found") as NodeJS.ErrnoException;
+  error.code = "ENOENT";
+  (fs as any).readFile = async () => { throw error; };
+  
+  const result = await (hook as any).loadSummary("/test/nonexistent.md");
+  assertEq(result, null, "should return null for ENOENT");
+  
+  (fs as any).readFile = originalReadFile;
+}
+
+console.log("\n=== loadSummary: returns null on other errors ===");
+{
+  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const originalReadFile = fs.readFile;
+  (fs as any).readFile = async () => { throw new Error("Permission denied"); };
+  
+  const result = await (hook as any).loadSummary("/test/error.md");
+  assertEq(result, null, "should return null on other errors");
+  
+  (fs as any).readFile = originalReadFile;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

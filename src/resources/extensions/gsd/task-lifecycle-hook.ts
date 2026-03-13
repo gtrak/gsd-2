@@ -177,8 +177,18 @@ export class TaskLifecycleHook {
    * Returns null if file doesn't exist or can't be read.
    */
   private async loadSummary(path: string): Promise<string | null> {
-    // Implementation in Task 2.6
-    return null;
+    try {
+      const content = await fs.readFile(path, "utf-8");
+      return content;
+    } catch (err) {
+      // File doesn't exist or can't be read - return null
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return null;
+      }
+      // Log other errors but still return null
+      console.error(`Error reading summary at ${path}:`, err);
+      return null;
+    }
   }
 
   // ─── Parsing ────────────────────────────────────────────────────────────────

@@ -12,6 +12,8 @@ export type {
   DispatchMiddleware,
   MiddlewareConfig,
   MiddlewareFactory,
+  DispatchMiddlewareRegistration,
+  GSDMiddleware,
 } from "./types.js";
 
 // ─── Middleware Factory Exports ────────────────────────────────────────────
@@ -39,7 +41,7 @@ export { MERGE_ERROR_DECISION } from "./merge-guard.js";
 
 // ─── Compose Functions ─────────────────────────────────────────────────────
 
-import type { DispatchMiddleware, MiddlewareConfig } from "./types.js";
+import type { DispatchMiddleware, MiddlewareConfig, GSDMiddleware, DispatchMiddlewareRegistration } from "./types.js";
 import { createIdempotencyMiddleware } from "./idempotency.js";
 import { createBudgetCeilingMiddleware } from "./budget-ceiling.js";
 import { createMergeGuardMiddleware } from "./merge-guard.js";
@@ -70,46 +72,6 @@ export interface MiddlewareChainConfig {
   codeReview?: Partial<MiddlewareConfig>;
   /** Configuration for observability middleware (priority 60) */
   observability?: Partial<MiddlewareConfig>;
-}
-
-/**
- * Composes all dispatch middlewares with default configurations.
- *
- * Returns middlewares sorted by priority (highest first):
- * - idempotency (100)
- * - budget-ceiling (95)
- * - merge-guard (90)
- * - uat-dispatch (85)
- * - reassessment (80)
- * - phase-dispatch (75)
- * - code-review (70)
- * - observability (60)
- *
- * @returns An array of DispatchMiddleware functions sorted by priority
- *
- * @example
- * ```typescript
- * const middlewares = composeDispatchMiddlewares();
- * ```
- */
-export function composeDispatchMiddlewares(): DispatchMiddleware[] {
-  const middlewares = [
-    createIdempotencyMiddleware(),      // 100
-    createBudgetCeilingMiddleware(),    // 95
-    createMergeGuardMiddleware(),       // 90
-    createUatDispatchMiddleware(),      // 85
-    createReassessmentMiddleware(),     // 80
-    createPhaseDispatchMiddleware(),    // 75
-    createCodeReviewMiddleware(),       // 70
-    createObservabilityMiddleware(),    // 60
-  ];
-
-  // Sort by priority (highest first)
-  return middlewares.sort((a, b) => {
-    const priorityA = (a as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    const priorityB = (b as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    return priorityB - priorityA;
-  });
 }
 
 /**
@@ -144,6 +106,137 @@ export function composeDispatchMiddlewaresWithConfig(
   ].filter(m => (m as DispatchMiddleware & { __metadata?: unknown }).__metadata !== undefined);
 
   return middlewares.sort((a, b) => {
+    const priorityA = (a as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
+    const priorityB = (b as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
+    return priorityB - priorityA;
+  });
+}
+
+// ─── Unified Middleware Registration ────────────────────────────────────────
+
+/**
+ * Singleton registry for custom dispatch middlewares.
+ * Maps middleware name to registration.
+ */
+const dispatchMiddlewareRegistry = new Map<string, DispatchMiddlewareRegistration>();
+
+/**
+ * Register a custom dispatch middleware.
+ *
+ * This function allows registering both DispatchMiddleware and GSDMiddleware
+ * types. Later registrations with the same name will overwrite earlier ones.
+ *
+ * @param registration - Configuration for the middleware registration
+ * @param registration.name - Unique name for the middleware (used for deduplication)
+ * @param registration.priority - Priority of the middleware (0-100, default: 50)
+ * @param registration.enabled - Whether the middleware is enabled (default: true)
+ * @param registration.middleware - The middleware function
+ *
+ * @example
+ * ```typescript
+ * registerDispatchMiddleware({
+ *   name: "my-custom-middleware",
+ *   priority: 85,
+ *   enabled: true,
+ *   middleware: async (context, next) => {
+ *     // Custom logic before next middleware
+ *     await next();
+ *     // Custom logic after next middleware
+ *   }
+ * });
+ * ```
+ */
+export function registerDispatchMiddleware(registration: {
+  name: string;
+  priority?: number;
+  enabled?: boolean;
+  middleware: DispatchMiddleware | GSDMiddleware;
+}): void {
+  dispatchMiddlewareRegistry.set(registration.name, {
+    name: registration.name,
+    priority: registration.priority ?? 50,
+    enabled: registration.enabled ?? true,
+    middleware: registration.middleware,
+  });
+}
+
+/**
+ * Get all registered custom dispatch middlewares sorted by priority.
+ *
+ * Returns middlewares sorted by priority (highest first).
+ * Disabled middlewares are included but can be filtered by the caller.
+ *
+ * @returns An array of registered middleware configurations sorted by priority
+ *
+ * @example
+ * ```typescript
+ * const middlewares = getRegisteredDispatchMiddlewares();
+ * for (const mw of middlewares) {
+ *   console.log(`${mw.name} (priority: ${mw.priority})`);
+ * }
+ * ```
+ */
+export function getRegisteredDispatchMiddlewares(): DispatchMiddlewareRegistration[] {
+  return Array.from(dispatchMiddlewareRegistry.values()).sort((a, b) => {
+    return b.priority - a.priority; // Higher priority first
+  });
+}
+
+/**
+ * Clear all registered custom dispatch middlewares.
+ *
+ * Useful for testing to reset the registry between tests.
+ *
+ * @example
+ * ```typescript
+ * clearRegisteredDispatchMiddlewares();
+ * ```
+ */
+export function clearRegisteredDispatchMiddlewares(): void {
+  dispatchMiddlewareRegistry.clear();
+}
+
+// ─── Compose Function with Custom Middlewares ───────────────────────────────
+
+/**
+ * Composes all dispatch middlewares including registered custom middlewares.
+ *
+ * Returns middlewares sorted by priority (highest first), including:
+ * - Built-in middlewares (idempotency, budget-ceiling, merge-guard, etc.)
+ * - Custom middlewares registered via registerDispatchMiddleware()
+ *
+ * Disabled middlewares are filtered out of the result.
+ *
+ * @returns An array of enabled DispatchMiddleware functions sorted by priority
+ *
+ * @example
+ * ```typescript
+ * const middlewares = composeDispatchMiddlewares();
+ * ```
+ */
+export function composeDispatchMiddlewares(): DispatchMiddleware[] {
+  // Get built-in middlewares
+  const builtInMiddlewares = [
+    createIdempotencyMiddleware(),      // 100
+    createBudgetCeilingMiddleware(),    // 95
+    createMergeGuardMiddleware(),       // 90
+    createUatDispatchMiddleware(),      // 85
+    createReassessmentMiddleware(),     // 80
+    createPhaseDispatchMiddleware(),    // 75
+    createCodeReviewMiddleware(),       // 70
+    createObservabilityMiddleware(),    // 60
+  ];
+
+  // Get registered custom middlewares (only enabled ones)
+  const customMiddlewares = getRegisteredDispatchMiddlewares()
+    .filter(reg => reg.enabled)
+    .map(reg => reg.middleware as DispatchMiddleware);
+
+  // Combine all middlewares
+  const allMiddlewares = [...builtInMiddlewares, ...customMiddlewares];
+
+  // Sort by priority (highest first)
+  return allMiddlewares.sort((a, b) => {
     const priorityA = (a as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
     const priorityB = (b as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
     return priorityB - priorityA;

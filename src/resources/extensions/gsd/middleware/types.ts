@@ -1,7 +1,7 @@
 // GSD Extension — Dispatch Middleware Types
 // Types specific to the dispatch middleware system for unit dispatch decisions.
 
-import type { HookContext } from "../hooks.js";
+import type { HookContext, GSDMiddleware } from "../hooks.js";
 
 // ─── Dispatch Decision ─────────────────────────────────────────────────────
 
@@ -117,3 +117,41 @@ export interface MiddlewareConfig {
 export type MiddlewareFactory = (
   config?: Partial<MiddlewareConfig>
 ) => DispatchMiddleware;
+
+// ─── Middleware Registration ───────────────────────────────────────────────
+
+/**
+ * Configuration for registering a dispatch middleware.
+ */
+export interface DispatchMiddlewareRegistration {
+  /**
+   * Unique name for the middleware (used for deduplication).
+   */
+  name: string;
+
+  /**
+   * Priority of the middleware (0-100).
+   * Higher values execute first.
+   * @default 50
+   */
+  priority: number;
+
+  /**
+   * Whether the middleware is enabled.
+   * @default true
+   */
+  enabled: boolean;
+
+  /**
+   * The middleware function.
+   */
+  middleware: DispatchMiddleware | GSDMiddleware;
+}
+
+// ─── Re-exports for Compatibility ───────────────────────────────────────────
+
+/**
+ * Re-export GSDMiddleware for compatibility with registration API.
+ */
+export type { GSDMiddleware } from "../hooks.js";
+

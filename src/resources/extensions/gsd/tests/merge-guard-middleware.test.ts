@@ -1,55 +1,21 @@
 // GSD Extension — Merge Guard Middleware Tests
 // Unit tests for createMergeGuardMiddleware
 
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
+import {
+  passed,
+  failed,
+  assert,
+  assertEq,
+  assertNotUndefined,
+  assertNull,
+  createTestDir,
+} from "./test-helpers.js";
 
 // Test counters
-let passed = 0;
-let failed = 0;
 let pendingTests = 0;
-
-// ─── Test Helpers ──────────────────────────────────────────────────────────
-
-function assert(condition: boolean, message: string): void {
-  if (condition) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message}`);
-  }
-}
-
-function assertEq<T>(actual: T, expected: T, message: string): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    passed++;
-  } else {
-    failed++;
-    console.error(
-      `  FAIL: ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-function assertNotUndefined<T>(actual: T, message: string): void {
-  if (actual !== undefined) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message} — expected not undefined, got undefined`);
-  }
-}
-
-function assertNull<T>(actual: T, message: string): void {
-  if (actual === null || actual === undefined) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message} — expected null/undefined, got ${JSON.stringify(actual)}`);
-  }
-}
 
 // Run a git command in a directory
 function runGit(cwd: string, args: string[]): string {
@@ -69,20 +35,11 @@ function runGit(cwd: string, args: string[]): string {
 
 // Create a temporary test directory with git repo
 function createTestRepo(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), "gsd-test-"));
+  const { dir, cleanup } = createTestDir();
   runGit(dir, ["init", "-b", "main"]);
   runGit(dir, ["config", "user.name", "Test User"]);
   runGit(dir, ["config", "user.email", "test@example.com"]);
-  return {
-    dir,
-    cleanup: () => {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-    },
-  };
+  return { dir, cleanup };
 }
 
 // Create a .gsd/milestones/MID/ID-ROADMAP.md file

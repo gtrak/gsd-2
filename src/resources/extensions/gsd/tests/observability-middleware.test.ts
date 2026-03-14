@@ -1,99 +1,20 @@
 // GSD Extension — Observability Middleware Tests
 // Unit tests for createObservabilityMiddleware
 
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-
 import { createObservabilityMiddleware } from "../middleware/observability.js";
 import type { DispatchContext, MiddlewareConfig, PipelineStage } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
-
-// Test counters
-let passed = 0;
-let failed = 0;
-
-// ─── Test Helpers ──────────────────────────────────────────────────────────
-
-function assert(condition: boolean, message: string): void {
-  if (condition) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message}`);
-  }
-}
-
-function assertEq<T>(actual: T, expected: T, message: string): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    passed++;
-  } else {
-    failed++;
-    console.error(
-      `  FAIL: ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-// Create a temporary test directory
-function createTestDir(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), "gsd-test-"));
-  return {
-    dir,
-    cleanup: () => {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-    },
-  };
-}
-
-// Mock ExtensionAPI and ExtensionContext
-const mockPi = {} as any;
-const mockCtx = {
-  ui: {
-    notify: () => {},
-  },
-} as any;
-
-const baseState: GSDState = {
-  activeMilestone: { id: "M001", title: "Test Milestone" },
-  activeSlice: { id: "S01", title: "Test Slice" },
-  activeTask: { id: "T01", title: "Test Task" },
-  phase: "executing",
-  recentDecisions: [],
-  blockers: [],
-  nextAction: "test",
-  registry: [],
-  extensions: {},
-};
-
-// Create a mock DispatchContext
-function createMockContext(
-  basePath: string,
-  completedKeySet: Set<string> = new Set(),
-  pendingDecision?: any,
-): DispatchContext {
-  return {
-    basePath,
-    pi: mockPi,
-    ctx: mockCtx,
-    state: baseState,
-    workingState: { ...baseState },
-    getExtensionData: () => undefined,
-    setExtensionData: () => {},
-    resolveTaskFile: () => null,
-    resolveSliceFile: () => null,
-    resolveMilestoneFile: () => null,
-    completedKeySet,
-    pendingDecision,
-    getCompletedKey: (unitType: string, unitId: string) => `${unitType}/${unitId}`,
-    isUnitCompleted: (unitType: string, unitId: string) =>
-      completedKeySet.has(`${unitType}/${unitId}`),
-  };
-}
+import {
+  passed,
+  failed,
+  assert,
+  assertEq,
+  createTestDir,
+  mockPi,
+  mockCtx,
+  baseState,
+  createMockContext,
+} from "./test-helpers.js";
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 

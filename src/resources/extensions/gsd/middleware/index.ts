@@ -231,7 +231,7 @@ export function composeDispatchMiddlewares(): DispatchMiddleware[] {
 /**
  * Default stages for built-in middlewares.
  */
-const DEFAULT_MIDDLEWARE_STAGES: Record<string, PipelineStage> = {
+export const DEFAULT_MIDDLEWARE_STAGES: Record<string, PipelineStage> = {
   idempotency: "pre-validation",
   validation: "validation",
   "budget-ceiling": "pre-dispatch",

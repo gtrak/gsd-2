@@ -1,54 +1,19 @@
 // GSD Extension — Idempotency Middleware Tests
 // Unit tests for createIdempotencyMiddleware
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 import { createIdempotencyMiddleware, SKIP_DECISION } from "../middleware/idempotency.js";
 import type { DispatchContext, MiddlewareConfig, PipelineStage } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
-
-// Test counters
-let passed = 0;
-let failed = 0;
-
-// ─── Test Helpers ──────────────────────────────────────────────────────────
-
-function assert(condition: boolean, message: string): void {
-  if (condition) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message}`);
-  }
-}
-
-function assertEq<T>(actual: T, expected: T, message: string): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    passed++;
-  } else {
-    failed++;
-    console.error(
-      `  FAIL: ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-// Create a temporary test directory
-function createTestDir(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), "gsd-test-"));
-  return {
-    dir,
-    cleanup: () => {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-    },
-  };
-}
+import {
+  passed,
+  failed,
+  assert,
+  assertEq,
+  createTestDir,
+} from "./test-helpers.js";
 
 // Create the milestone and slice directory structure
 // This is required for resolveExpectedArtifactPath to work correctly

@@ -1,62 +1,21 @@
 // GSD Extension — Phase Dispatch Middleware Tests
 // Unit tests for createPhaseDispatchMiddleware
 
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import type { PipelineStage } from "../middleware/types.js";
+import {
+  passed,
+  failed,
+  assert,
+  assertEq,
+  assertNotUndefined,
+  createTestDir,
+} from "./test-helpers.js";
 
 // Test counters
-let passed = 0;
-let failed = 0;
 let pendingTests = 0;
-
-// ─── Test Helpers ──────────────────────────────────────────────────────────
-
-function assert(condition: boolean, message: string): void {
-  if (condition) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message}`);
-  }
-}
-
-function assertEq<T>(actual: T, expected: T, message: string): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    passed++;
-  } else {
-    failed++;
-    console.error(
-      `  FAIL: ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-function assertNotUndefined<T>(actual: T, message: string): void {
-  if (actual !== undefined) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message} — expected not undefined, got undefined`);
-  }
-}
-
-// Create a temporary test directory
-function createTestDir(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), "gsd-test-"));
-  return {
-    dir,
-    cleanup: () => {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-    },
-  };
-}
 
 // Create a .gsd directory structure with minimal files for testing
 function createTestGsdStructure(dir: string, mid: string, sid?: string, tid?: string): void {

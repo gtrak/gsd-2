@@ -1,10 +1,6 @@
 // GSD Extension — Notifications Middleware Tests
 // Tests for the notifications middleware that sends notifications at dispatch events.
 
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-
 import { createNotificationsMiddleware } from "../middleware/notifications.js";
 import type {
   DispatchContext,
@@ -12,66 +8,15 @@ import type {
   PipelineStage,
 } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
-
-// ─── Test Counters ──────────────────────────────────────────────────────────
-
-let passed = 0;
-let failed = 0;
-
-// ─── Test Helpers ────────────────────────────────────────────────────────────
-
-function assert(condition: boolean, message: string): void {
-  if (condition) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message}`);
-  }
-}
-
-function assertEq<T>(actual: T, expected: T, message: string): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    passed++;
-  } else {
-    failed++;
-    console.error(
-      `  FAIL: ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-function assertNotUndefined<T>(actual: T, message: string): void {
-  if (actual !== undefined) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message} — expected not undefined, got undefined`);
-  }
-}
-
-function assertNotCalled<T>(actual: T, message: string): void {
-  if (actual === undefined || actual === null) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message} — expected not called, but was called`);
-  }
-}
-
-// Create a temporary test directory
-function createTestDir(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), "gsd-notifications-middleware-test-"));
-  return {
-    dir,
-    cleanup: () => {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-    },
-  };
-}
+import {
+  passed,
+  failed,
+  assert,
+  assertEq,
+  assertNotUndefined,
+  assertNotCalled,
+  createTestDir,
+} from "./test-helpers.js";
 
 // ─── Mock Factories ─────────────────────────────────────────────────────────
 

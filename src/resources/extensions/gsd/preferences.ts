@@ -5,6 +5,7 @@ import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import type { GitPreferences } from "./git-service.ts";
 import { VALID_BRANCH_NAME } from "./git-service.ts";
 import type { PipelineStage } from "./middleware/types.js";
+import { DEFAULT_MIDDLEWARE_STAGES } from "./middleware/index.js";
 
 const GLOBAL_PREFERENCES_PATH = join(homedir(), ".gsd", "preferences.md");
 const LEGACY_GLOBAL_PREFERENCES_PATH = join(homedir(), ".pi", "agent", "gsd-preferences.md");
@@ -530,24 +531,6 @@ export function resolveAutoSupervisorConfig(): AutoSupervisorConfig {
 }
 
 // ─── Middleware Configuration ──────────────────────────────────────────────
-
-/**
- * Default stage mapping for built-in middlewares.
- * Used when no stage is specified in preferences.
- */
-const DEFAULT_MIDDLEWARE_STAGES: Record<string, PipelineStage> = {
-  idempotency: "pre-validation",
-  validation: "validation",
-  "budget-ceiling": "pre-dispatch",
-  "merge-guard": "pre-dispatch",
-  "uat-dispatch": "dispatch",
-  reassessment: "dispatch",
-  "phase-dispatch": "dispatch",
-  "code-review": "post-dispatch",
-  metrics: "post-dispatch",
-  observability: "post-dispatch",
-  notifications: "notification",
-};
 
 /**
  * Loads middleware configuration from GSD preferences.

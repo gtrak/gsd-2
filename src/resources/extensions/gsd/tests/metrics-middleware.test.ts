@@ -1,10 +1,6 @@
 // GSD Extension — Metrics Middleware Tests
 // Tests for the metrics middleware that tracks dispatch timing.
 
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-
 import { createMetricsMiddleware } from "../middleware/metrics.js";
 import type {
   DispatchContext,
@@ -12,116 +8,22 @@ import type {
   PipelineStage,
 } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
-
-// ─── Test Counters ──────────────────────────────────────────────────────────
-
-let passed = 0;
-let failed = 0;
-
-// ─── Test Helpers ────────────────────────────────────────────────────────────
-
-function assert(condition: boolean, message: string): void {
-  if (condition) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message}`);
-  }
-}
-
-function assertEq<T>(actual: T, expected: T, message: string): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    passed++;
-  } else {
-    failed++;
-    console.error(
-      `  FAIL: ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-function assertNotUndefined<T>(actual: T, message: string): void {
-  if (actual !== undefined) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`  FAIL: ${message} — expected not undefined, got undefined`);
-  }
-}
-
-function assertGte(actual: number, expected: number, message: string): void {
-  if (actual >= expected) {
-    passed++;
-  } else {
-    failed++;
-    console.error(
-      `  FAIL: ${message} — expected ${actual} >= ${expected}`,
-    );
-  }
-}
-
-function assertGt(actual: number, expected: number, message: string): void {
-  if (actual > expected) {
-    passed++;
-  } else {
-    failed++;
-    console.error(
-      `  FAIL: ${message} — expected ${actual} > ${expected}`,
-    );
-  }
-}
-
-// Create a temporary test directory
-function createTestDir(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), "gsd-metrics-middleware-test-"));
-  return {
-    dir,
-    cleanup: () => {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-    },
-  };
-}
+import {
+  passed,
+  failed,
+  assert,
+  assertEq,
+  assertNotUndefined,
+  assertGte,
+  assertGt,
+  createTestDir,
+  mockPi,
+  mockCtx,
+  baseState,
+  createMockContext,
+} from "./test-helpers.js";
 
 // ─── Mock Factories ─────────────────────────────────────────────────────────
-
-/**
- * Creates a mock ExtensionContext
- */
-function createMockExtensionContext(): any {
-  return {
-    ui: {
-      notify: () => {},
-    },
-  };
-}
-
-/**
- * Creates a mock ExtensionAPI
- */
-function createMockExtensionAPI(): any {
-  return {};
-}
-
-/**
- * Creates a mock GSDState
- */
-function createMockGSDState(): GSDState {
-  return {
-    activeMilestone: { id: "M001", title: "Test Milestone" },
-    activeSlice: { id: "S01", title: "Test Slice" },
-    activeTask: { id: "T01", title: "Test Task" },
-    phase: "executing",
-    recentDecisions: [],
-    blockers: [],
-    nextAction: "test",
-    registry: [],
-    extensions: {},
-  };
-}
 
 /**
  * Creates a mock DispatchContext with all helpers
@@ -132,9 +34,7 @@ function createMockDispatchContext(
   pendingDecision?: any,
   state?: GSDState,
 ): DispatchContext {
-  const mockCtx = createMockExtensionContext();
-  const mockPi = createMockExtensionAPI();
-  const gsdState = state ?? createMockGSDState();
+  const gsdState = state ?? baseState;
 
   return {
     basePath,

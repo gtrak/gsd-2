@@ -39,7 +39,7 @@ import {
   readUnitRuntimeRecord,
   writeUnitRuntimeRecord,
 } from "./unit-runtime.js";
-import { resolveAutoSupervisorConfig, resolveModelForUnit, resolveSkillDiscoveryMode, loadEffectiveGSDPreferences, loadMiddlewareConfig } from "./preferences.js";
+import { resolveAutoSupervisorConfig, resolveModelForUnit, resolveSkillDiscoveryMode, loadEffectiveGSDPreferences } from "./preferences.js";
 import type { GSDPreferences } from "./preferences.js";
 import {
   validatePlanBoundary,

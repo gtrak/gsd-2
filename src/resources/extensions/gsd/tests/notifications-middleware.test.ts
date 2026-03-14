@@ -1,5 +1,5 @@
 // GSD Extension — Notifications Middleware Tests
-// Tests for the notifications middleware that sends notifications at key dispatch lifecycle points.
+// Tests for the notifications middleware that sends notifications at dispatch events.
 
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -48,12 +48,12 @@ function assertNotUndefined<T>(actual: T, message: string): void {
   }
 }
 
-function assertUndefined<T>(actual: T, message: string): void {
-  if (actual === undefined) {
+function assertNotCalled<T>(actual: T, message: string): void {
+  if (actual === undefined || actual === null) {
     passed++;
   } else {
     failed++;
-    console.error(`  FAIL: ${message} — expected undefined, got ${JSON.stringify(actual)}`);
+    console.error(`  FAIL: ${message} — expected not called, but was called`);
   }
 }
 
@@ -75,14 +75,21 @@ function createTestDir(): { dir: string; cleanup: () => void } {
 // ─── Mock Factories ─────────────────────────────────────────────────────────
 
 /**
- * Creates a mock ExtensionContext
+ * Creates a mock ExtensionContext with notification tracking
  */
-function createMockExtensionContext(): any {
-  return {
+function createMockExtensionContext(): {
+  ctx: any;
+  notifications: Array<{ message: string; type: string }>;
+} {
+  const notifications: Array<{ message: string; type: string }> = [];
+  const mockCtx = {
     ui: {
-      notify: () => {},
+      notify: (message: string, type: string = "info") => {
+        notifications.push({ message, type });
+      },
     },
   };
+  return { ctx: mockCtx, notifications };
 }
 
 /**
@@ -117,15 +124,16 @@ function createMockDispatchContext(
   completedKeySet: Set<string> = new Set(),
   pendingDecision?: any,
   state?: GSDState,
+  mockCtx?: any,
 ): DispatchContext {
-  const mockCtx = createMockExtensionContext();
+  const ctx = mockCtx ?? createMockExtensionContext().ctx;
   const mockPi = createMockExtensionAPI();
   const gsdState = state ?? createMockGSDState();
 
   return {
     basePath,
     pi: mockPi,
-    ctx: mockCtx,
+    ctx,
     state: gsdState,
     workingState: { ...gsdState, extensions: { ...gsdState.extensions } },
     getExtensionData: () => undefined,
@@ -145,203 +153,257 @@ function createMockDispatchContext(
 
 console.log("\n=== Notifications Middleware Tests ===\n");
 
-// Test 1: notifications middleware calls onDispatchStart
-console.log("=== Test 1: notifications middleware calls onDispatchStart ===");
+// Test 1: notifications middleware sends notification on dispatch start
+console.log("=== Test 1: notifications middleware sends notification on dispatch start ===");
 {
   const { dir, cleanup } = createTestDir();
+  const { ctx, notifications } = createMockExtensionContext();
 
-  let onDispatchStartCalled = false;
-  const middleware = createNotificationsMiddleware({
-    onDispatchStart: (ctx) => {
-      onDispatchStartCalled = true;
-    },
-  });
-  const context = createMockDispatchContext(dir);
+  const middleware = createNotificationsMiddleware({ onDispatchStart: true });
+  const context = createMockDispatchContext(dir, new Set(), undefined, undefined, ctx);
+
+  context.decision = {
+    unitType: "execute-task",
+    unitId: "M001/S01/T01",
+    prompt: "Test prompt",
+  };
 
   await middleware(context, async () => {
     // Empty next
   });
 
-  assert(onDispatchStartCalled, "onDispatchStart callback should be called");
+  assert(notifications.length >= 1, "should have at least one notification");
+  assert(notifications[0].message.includes("Dispatching"), "notification should include 'Dispatching'");
+  assert(notifications[0].message.includes("execute-task"), "notification should include unitType");
+  assert(notifications[0].message.includes("M001/S01/T01"), "notification should include unitId");
 
   cleanup();
 }
 
-// Test 2: notifications middleware calls onDispatchComplete
-console.log("\n=== Test 2: notifications middleware calls onDispatchComplete ===");
+// Test 2: notifications middleware sends notification on dispatch complete
+console.log("\n=== Test 2: notifications middleware sends notification on dispatch complete ===");
 {
   const { dir, cleanup } = createTestDir();
+  const { ctx, notifications } = createMockExtensionContext();
 
-  let onDispatchCompleteCalled = false;
-  const middleware = createNotificationsMiddleware({
-    onDispatchComplete: (ctx) => {
-      onDispatchCompleteCalled = true;
-    },
-  });
-  const context = createMockDispatchContext(dir);
+  const middleware = createNotificationsMiddleware({ onDispatchComplete: true });
+  const context = createMockDispatchContext(dir, new Set(), undefined, undefined, ctx);
+
+  context.decision = {
+    unitType: "complete-slice",
+    unitId: "M001/S01",
+    prompt: "Test prompt",
+  };
 
   await middleware(context, async () => {
     // Empty next
   });
 
-  assert(onDispatchCompleteCalled, "onDispatchComplete callback should be called");
+  assert(notifications.length >= 1, "should have at least one notification");
+  assert(notifications[0].message.includes("Dispatched"), "notification should include 'Dispatched'");
+  assert(notifications[0].message.includes("complete-slice"), "notification should include unitType");
+  assert(notifications[0].message.includes("M001/S01"), "notification should include unitId");
 
   cleanup();
 }
 
-// Test 3: notifications middleware calls onDispatchError on failure
-console.log("\n=== Test 3: notifications middleware calls onDispatchError on failure ===");
+// Test 3: notifications middleware uses default messages when enabled
+console.log("\n=== Test 3: notifications middleware uses default messages when enabled ===");
 {
   const { dir, cleanup } = createTestDir();
+  const { ctx, notifications } = createMockExtensionContext();
 
-  let onDispatchErrorCalled = false;
-  let errorReceived: Error | undefined;
   const middleware = createNotificationsMiddleware({
-    onDispatchError: (ctx, error) => {
-      onDispatchErrorCalled = true;
-      errorReceived = error;
-    },
+    onDispatchStart: true,
+    onDispatchComplete: true,
   });
-  const context = createMockDispatchContext(dir);
+  const context = createMockDispatchContext(dir, new Set(), undefined, undefined, ctx);
 
-  let errorCaught = false;
-  try {
-    await middleware(context, async () => {
-      throw new Error("Test error");
-    });
-  } catch {
-    errorCaught = true;
-  }
+  context.decision = {
+    unitType: "execute-task",
+    unitId: "M001/S01/T01",
+    prompt: "Test prompt",
+  };
 
-  assert(onDispatchErrorCalled, "onDispatchError callback should be called on error");
-  assert(errorCaught, "error should propagate from next()");
-  assert(errorReceived !== undefined, "error should be passed to callback");
-  assertEq(errorReceived?.message, "Test error", "error message should match");
+  await middleware(context, async () => {
+    // Empty next
+  });
+
+  assert(notifications.length === 2, "should have 2 notifications");
+  assert(notifications[0].message === "Dispatching execute-task M001/S01/T01", "first notification should use default start message");
+  assert(notifications[1].message === "Dispatched execute-task M001/S01/T01", "second notification should use default complete message");
 
   cleanup();
 }
 
-// Test 4: notifications middleware errors don't break chain
-console.log("\n=== Test 4: notifications middleware errors don't break chain ===");
+// Test 4: notifications middleware uses custom messages when configured
+console.log("\n=== Test 4: notifications middleware uses custom messages when configured ===");
 {
   const { dir, cleanup } = createTestDir();
+  const { ctx, notifications } = createMockExtensionContext();
+
+  const middleware = createNotificationsMiddleware({
+    onDispatchStart: "Starting {unitType} {unitId}",
+    onDispatchComplete: "Finished {unitType} {unitId}",
+  });
+  const context = createMockDispatchContext(dir, new Set(), undefined, undefined, ctx);
+
+  context.decision = {
+    unitType: "complete-milestone",
+    unitId: "M001",
+    prompt: "Test prompt",
+  };
+
+  await middleware(context, async () => {
+    // Empty next
+  });
+
+  assert(notifications.length === 2, "should have 2 notifications");
+  assert(notifications[0].message === "Starting complete-milestone M001", "first notification should use custom start message");
+  assert(notifications[1].message === "Finished complete-milestone M001", "second notification should use custom complete message");
+
+  cleanup();
+}
+
+// Test 5: notifications middleware can be disabled
+console.log("\n=== Test 5: notifications middleware can be disabled ===");
+{
+  const { dir, cleanup } = createTestDir();
+  const { ctx, notifications } = createMockExtensionContext();
+
+  const middleware = createNotificationsMiddleware({
+    enabled: false,
+    onDispatchStart: true,
+    onDispatchComplete: true,
+  });
+  const context = createMockDispatchContext(dir, new Set(), undefined, undefined, ctx);
+
+  context.decision = {
+    unitType: "execute-task",
+    unitId: "M001/S01/T01",
+    prompt: "Test prompt",
+  };
+
+  await middleware(context, async () => {
+    // Empty next
+  });
+
+  assert(notifications.length === 0, "should have no notifications when disabled");
+
+  cleanup();
+}
+
+// Test 6: notifications middleware calls next()
+console.log("\n=== Test 6: notifications middleware calls next() ===");
+{
+  const { dir, cleanup } = createTestDir();
+  const { ctx, notifications } = createMockExtensionContext();
+
+  const middleware = createNotificationsMiddleware({ onDispatchStart: true });
+  const context = createMockDispatchContext(dir, new Set(), undefined, undefined, ctx);
 
   let nextCalled = false;
-  let onDispatchCompleteCalled = false;
-  const middleware = createNotificationsMiddleware({
-    onDispatchStart: () => {
-      throw new Error("Callback error");
-    },
-    onDispatchComplete: (ctx) => {
-      onDispatchCompleteCalled = true;
-    },
-  });
-  const context = createMockDispatchContext(dir);
-
   await middleware(context, async () => {
     nextCalled = true;
   });
 
-  assert(nextCalled, "next() should still be called despite callback error");
-  assert(onDispatchCompleteCalled, "onDispatchComplete should still be called");
+  assert(nextCalled, "next() should be called");
+  assert(notifications.length === 1, "should have sent notification");
 
   cleanup();
 }
 
-// Test 5: notifications middleware passes correct context to callbacks
-console.log("\n=== Test 5: notifications middleware passes correct context to callbacks ===");
+// Test 7: notifications middleware handles errors gracefully
+console.log("\n=== Test 7: notifications middleware handles errors gracefully ===");
 {
   const { dir, cleanup } = createTestDir();
+  const { ctx, notifications } = createMockExtensionContext();
 
-  let receivedContext: DispatchContext | undefined;
-  let receivedError: Error | undefined;
   const middleware = createNotificationsMiddleware({
-    onDispatchStart: (ctx) => {
-      receivedContext = ctx;
-    },
-    onDispatchError: (ctx, error) => {
-      receivedContext = ctx;
-      receivedError = error;
-    },
+    onDispatchStart: true,
+    onError: true,
   });
-  const context = createMockDispatchContext(dir, new Set(), {
+  const context = createMockDispatchContext(dir, new Set(), undefined, undefined, ctx);
+
+  context.decision = {
     unitType: "execute-task",
     unitId: "M001/S01/T01",
     prompt: "Test prompt",
-  });
+  };
 
   let errorCaught = false;
   try {
     await middleware(context, async () => {
-      throw new Error("Test error");
+      throw new Error("Test dispatch error");
     });
-  } catch {
+  } catch (err) {
     errorCaught = true;
   }
 
-  assert(receivedContext !== undefined, "context should be passed to callback");
-  assertEq(receivedContext?.basePath, dir, "context basePath should match");
-  assert(receivedError !== undefined, "error should be passed to onDispatchError");
-  assertEq(receivedError?.message, "Test error", "error message should match");
+  assert(errorCaught, "error should propagate from next()");
+  assert(notifications.length === 2, "should have 2 notifications (start + error)");
+  assert(notifications[0].type === "info", "start notification should be info type");
+  assert(notifications[1].type === "error", "error notification should be error type");
+  assert(notifications[1].message.includes("Test dispatch error"), "error notification should include error message");
 
   cleanup();
 }
 
-// Test 6: notifications middleware uses priority 55
-console.log("\n=== Test 6: notifications middleware uses priority 55 ===");
-{
-  const middleware = createNotificationsMiddleware();
-  const metadata = (middleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
-
-  assertEq(metadata?.priority, 55, "notifications middleware should have priority 55");
-  assertEq(metadata?.name, "notifications", "notifications middleware should have name 'notifications'");
-}
-
-// Test 7: notifications middleware respects enabled/disabled config
-console.log("\n=== Test 7: notifications middleware respects enabled/disabled config ===");
+// Test 8: notifications middleware includes decision info in notifications
+console.log("\n=== Test 8: notifications middleware includes decision info in notifications ===");
 {
   const { dir, cleanup } = createTestDir();
+  const { ctx, notifications } = createMockExtensionContext();
 
-  let callbackCalled = false;
-  const disabledMiddleware = createNotificationsMiddleware({
-    enabled: false,
-    onDispatchStart: (ctx) => {
-      callbackCalled = true;
-    },
+  const middleware = createNotificationsMiddleware({
+    onDispatchStart: "Dispatching {unitType} {unitId}",
+    onDispatchComplete: "Completed {unitType} {unitId}",
   });
-  const context = createMockDispatchContext(dir);
+  const context = createMockDispatchContext(dir, new Set(), undefined, undefined, ctx);
 
-  await disabledMiddleware(context, async () => {
-    // This should not be called
-    throw new Error("next() should not be called for disabled middleware");
-  });
-
-  assert(!callbackCalled, "callback should not be called for disabled middleware");
-
-  // Test enabled middleware with explicit config
-  callbackCalled = false;
-  const enabledMiddleware = createNotificationsMiddleware({
-    enabled: true,
-    priority: 55,
-    onDispatchStart: (ctx) => {
-      callbackCalled = true;
-    },
-  });
-  const context2 = createMockDispatchContext(dir);
-
-  await enabledMiddleware(context2, async () => {
-    // Empty next
+  // No decision set initially
+  await middleware(context, async () => {
+    // Decision set during next()
+    context.decision = {
+      unitType: "execute-task",
+      unitId: "M001/S01/T01",
+      prompt: "Test prompt",
+    };
   });
 
-  assert(callbackCalled, "callback should be called for enabled middleware");
-  const metadata = (enabledMiddleware as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata;
-  assertEq(metadata?.priority, 55, "enabled middleware should have priority 55");
+  // First notification should use "unknown" placeholders since decision not set yet
+  assert(notifications.length === 2, "should have 2 notifications");
+  assert(notifications[0].message.includes("unknown"), "start notification should use 'unknown' when no decision");
+  // Second notification should have the decision info
+  assert(notifications[1].message.includes("execute-task"), "complete notification should include unitType");
+  assert(notifications[1].message.includes("M001/S01/T01"), "complete notification should include unitId");
 
   cleanup();
 }
 
-// Test 8: notifications middleware factory creates middleware correctly
-console.log("\n=== Test 8: notifications middleware factory creates middleware correctly ===");
+// Test 9: notifications middleware respects config priority
+console.log("\n=== Test 9: notifications middleware respects config priority ===");
+{
+  // Test default priority
+  const defaultMiddleware = createNotificationsMiddleware();
+  const defaultMetadata = (defaultMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+
+  assertEq(defaultMetadata?.priority, 55, "default notifications middleware should have priority 55");
+  assertEq(defaultMetadata?.name, "notifications", "default notifications middleware should have name 'notifications'");
+
+  // Test custom priority
+  const customMiddleware = createNotificationsMiddleware({
+    priority: 70,
+    name: "custom-notifications",
+  });
+  const customMetadata = (customMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+
+  assertEq(customMetadata?.priority, 70, "custom notifications middleware should have custom priority");
+  assertEq(customMetadata?.name, "custom-notifications", "custom notifications middleware should have custom name");
+}
+
+// Test 10: notifications middleware factory creates middleware correctly
+console.log("\n=== Test 10: notifications middleware factory creates middleware correctly ===");
 {
   // Test default configuration
   const defaultMiddleware = createNotificationsMiddleware();
@@ -352,67 +414,23 @@ console.log("\n=== Test 8: notifications middleware factory creates middleware c
 
   // Test custom configuration
   const customMiddleware = createNotificationsMiddleware({
-    priority: 60,
+    priority: 55,
     enabled: true,
-    name: "custom-notifications",
+    name: "my-notifications",
+    onDispatchStart: true,
+    onDispatchComplete: true,
+    onError: true,
   });
   const customMetadata = (customMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
 
-  assertEq(customMetadata?.priority, 60, "custom middleware should have custom priority");
-  assertEq(customMetadata?.name, "custom-notifications", "custom middleware should have custom name");
+  assertEq(customMetadata?.priority, 55, "custom middleware should have priority 55");
+  assertEq(customMetadata?.name, "my-notifications", "custom middleware should have custom name");
 
   // Test that each call returns a new instance
   const middleware1 = createNotificationsMiddleware();
   const middleware2 = createNotificationsMiddleware();
 
   assert(middleware1 !== middleware2, "factory should return different instances");
-}
-
-// Test 9: notifications middleware handles async callbacks
-console.log("\n=== Test 9: notifications middleware handles async callbacks ===");
-{
-  const { dir, cleanup } = createTestDir();
-
-  let onDispatchStartCalled = false;
-  let onDispatchCompleteCalled = false;
-  const middleware = createNotificationsMiddleware({
-    onDispatchStart: async (ctx) => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      onDispatchStartCalled = true;
-    },
-    onDispatchComplete: async (ctx) => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      onDispatchCompleteCalled = true;
-    },
-  });
-  const context = createMockDispatchContext(dir);
-
-  await middleware(context, async () => {
-    // Empty next
-  });
-
-  assert(onDispatchStartCalled, "async onDispatchStart callback should complete");
-  assert(onDispatchCompleteCalled, "async onDispatchComplete callback should complete");
-
-  cleanup();
-}
-
-// Test 10: notifications middleware is no-op when no callbacks provided
-console.log("\n=== Test 10: notifications middleware is no-op when no callbacks provided ===");
-{
-  const { dir, cleanup } = createTestDir();
-
-  let nextCalled = false;
-  const middleware = createNotificationsMiddleware();
-  const context = createMockDispatchContext(dir);
-
-  await middleware(context, async () => {
-    nextCalled = true;
-  });
-
-  assert(nextCalled, "next() should be called even when no callbacks provided");
-
-  cleanup();
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

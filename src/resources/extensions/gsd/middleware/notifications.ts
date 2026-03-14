@@ -1,5 +1,5 @@
 // GSD Extension — Notifications Middleware
-// Sends notifications at key dispatch lifecycle points.
+// Sends notifications at key dispatch events (before/after dispatch).
 // This middleware runs near the end of the chain (Priority 55).
 
 import type {
@@ -11,93 +11,90 @@ import type {
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /**
- * Configuration for notifications middleware.
+ * Configuration for the notifications middleware.
  */
-export interface NotificationsConfig {
+export interface NotificationsConfig extends MiddlewareConfig {
   /**
-   * Whether the middleware is enabled.
-   * @default true
+   * Send notification when dispatch starts.
+   * If true, uses default message. If string, uses custom message.
+   * @default false
    */
-  enabled?: boolean;
+  onDispatchStart?: boolean | string;
 
   /**
-   * Priority of the middleware (0-100).
-   * @default 55
+   * Send notification when dispatch completes.
+   * If true, uses default message. If string, uses custom message.
+   * @default false
    */
-  priority?: number;
+  onDispatchComplete?: boolean | string;
 
   /**
-   * Name of the middleware for identification.
-   * @default "notifications"
+   * Send notification when an error occurs during dispatch.
+   * If true, uses default message. If string, uses custom message.
+   * @default false
    */
-  name?: string;
-
-  /**
-   * Callback invoked when dispatch is starting, before next() is called.
-   * @param ctx - The dispatch context
-   */
-  onDispatchStart?: (ctx: DispatchContext) => Promise<void> | void;
-
-  /**
-   * Callback invoked after next() returns successfully.
-   * @param ctx - The dispatch context
-   */
-  onDispatchComplete?: (ctx: DispatchContext) => Promise<void> | void;
-
-  /**
-   * Callback invoked if next() throws an error.
-   * @param ctx - The dispatch context
-   * @param error - The error that was thrown
-   */
-  onDispatchError?: (ctx: DispatchContext, error: Error) => Promise<void> | void;
-
-  /**
-   * Optional filter to conditionally enable notifications based on unit type.
-   * If provided, notifications are only sent for matching unit types.
-   */
-  unitTypeFilter?: string[];
+  onError?: boolean | string;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
  * Default priority for notifications middleware.
- * Priority 55 to ensure it runs after metrics (65) but before custom middlewares (default 50).
+ * Priority 55 to ensure it runs after metrics (65) and observability (60).
  */
 const DEFAULT_PRIORITY = 55;
+
+/**
+ * Default message for dispatch start notification.
+ */
+const DEFAULT_DISPATCH_START_MSG = "Dispatching {unitType} {unitId}";
+
+/**
+ * Default message for dispatch complete notification.
+ */
+const DEFAULT_DISPATCH_COMPLETE_MSG = "Dispatched {unitType} {unitId}";
+
+/**
+ * Default message for error notification.
+ */
+const DEFAULT_ERROR_MSG = "Dispatch error: {error}";
 
 // ─── Middleware Factory ────────────────────────────────────────────────────
 
 /**
  * Creates the notifications middleware.
  *
- * This middleware provides hooks for sending notifications at key dispatch
- * lifecycle points. It supports onDispatchStart, onDispatchComplete, and
- * onDispatchError callbacks. Callbacks are wrapped in try/catch to prevent
- * errors from breaking the middleware chain.
+ * This middleware sends notifications at key dispatch events:
+ * - Before dispatch: Notifies when dispatch is starting
+ * - After dispatch: Notifies when dispatch completes
+ * - On error: Notifies when an error occurs during dispatch
+ *
+ * Notifications use context.ctx.ui.notify() and include unit information
+ * if a decision was made.
  *
  * @param config - Optional configuration for the middleware
- * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.priority - Priority of the middleware (default: 55)
+ * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "notifications")
- * @param config.onDispatchStart - Callback for dispatch start events
- * @param config.onDispatchComplete - Callback for successful dispatch completion
- * @param config.onDispatchError - Callback for dispatch errors
- * @param config.unitTypeFilter - Optional filter for unit types
+ * @param config.onDispatchStart - Enable dispatch start notification (default: false)
+ * @param config.onDispatchComplete - Enable dispatch complete notification (default: false)
+ * @param config.onError - Enable error notification (default: false)
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
  * const middleware = createNotificationsMiddleware({
- *   onDispatchStart: (ctx) => {
- *     console.log(`Dispatch starting for ${ctx.pendingDecision?.unitType}`);
- *   },
- *   onDispatchComplete: (ctx) => {
- *     console.log(`Dispatch completed for ${ctx.decision?.unitType}`);
- *   },
- *   onDispatchError: (ctx, error) => {
- *     console.error(`Dispatch failed: ${error.message}`);
- *   },
+ *   onDispatchStart: true,
+ *   onDispatchComplete: true,
+ * });
+ * ```
+ *
+ * @example
+ * ```typescript
+ * const middleware = createNotificationsMiddleware({
+ *   onDispatchStart: "Starting dispatch for {unitType} {unitId}",
+ *   onDispatchComplete: "Completed dispatch for {unitType} {unitId}",
+ *   onError: "Failed to dispatch: {error}",
  * });
  * ```
  */
@@ -107,97 +104,103 @@ export function createNotificationsMiddleware(
   const priority = config?.priority ?? DEFAULT_PRIORITY;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "notifications";
-  const onDispatchStart = config?.onDispatchStart;
-  const onDispatchComplete = config?.onDispatchComplete;
-  const onDispatchError = config?.onDispatchError;
-  const unitTypeFilter = config?.unitTypeFilter;
+  const onDispatchStart = config?.onDispatchStart ?? false;
+  const onDispatchComplete = config?.onDispatchComplete ?? false;
+  const onError = config?.onError ?? false;
 
   // Return a no-op middleware if disabled
   if (!enabled) {
-    const disabledMiddleware: DispatchMiddleware = async () => {
+    return async () => {
       // Disabled middleware does nothing
     };
-    (disabledMiddleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
-      name,
-      priority,
-    };
-    return disabledMiddleware;
   }
 
-  // Return a no-op middleware if no callbacks provided
-  if (!onDispatchStart && !onDispatchComplete && !onDispatchError) {
-    const noOpMiddleware: DispatchMiddleware = async (_context, next) => {
-      await next();
-    };
-    (noOpMiddleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
-      name,
-      priority,
-    };
-    return noOpMiddleware;
+  /**
+   * Formats a notification message with unit information.
+   * @param message - The message template
+   * @param context - The dispatch context
+   * @returns The formatted message
+   */
+  function formatMessage(message: string, context: DispatchContext): string {
+    let formatted = message;
+
+    // Replace {unitType} and {unitId} placeholders
+    const unitType = context.decision?.unitType ?? "unknown";
+    const unitId = context.decision?.unitId ?? "unknown";
+
+    formatted = formatted.replace(/\{unitType\}/g, unitType);
+    formatted = formatted.replace(/\{unitId\}/g, unitId);
+
+    // Replace {error} placeholder if present
+    if (context.workingState.extensions?._notificationsError) {
+      const error = context.workingState.extensions._notificationsError as string;
+      formatted = formatted.replace(/\{error\}/g, error);
+    }
+
+    return formatted;
   }
 
-  // Helper to check if notifications should be sent based on unit type filter
-  function shouldSendNotification(ctx: DispatchContext): boolean {
-    if (!unitTypeFilter || unitTypeFilter.length === 0) {
-      return true;
+  /**
+   * Sends a notification using context.ctx.ui.notify().
+   * Handles errors gracefully by catching any exceptions.
+   * @param context - The dispatch context
+   * @param message - The message to send
+   * @param type - The notification type (default: "info")
+   */
+  function notify(context: DispatchContext, message: string, type: "info" | "warning" | "error" = "info"): void {
+    try {
+      context.ctx.ui.notify(message, type);
+    } catch {
+      // Gracefully handle notification failures - do not throw
     }
-    const unitType = ctx.decision?.unitType ?? ctx.pendingDecision?.unitType;
-    if (!unitType) {
-      return true; // No unit type means no filter to apply
-    }
-    return unitTypeFilter.includes(unitType);
   }
 
   const middleware: DispatchMiddleware = async (context, next) => {
-    // Check if we should send notifications based on unit type filter
-    const shouldNotify = shouldSendNotification(context);
+    let error: unknown = undefined;
 
-    // Invoke onDispatchStart callback if provided
-    if (onDispatchStart && shouldNotify) {
-      try {
-        await onDispatchStart(context);
-      } catch (cbErr) {
-        // Silently swallow errors from callbacks to prevent breaking the chain
-        // eslint-disable-next-line no-console
-        console.error(`[NotificationsMiddleware] Callback error: ${cbErr instanceof Error ? cbErr.message : String(cbErr)}`);
-      }
+    // Send dispatch start notification if enabled
+    if (onDispatchStart) {
+      const message = typeof onDispatchStart === "string"
+        ? onDispatchStart
+        : DEFAULT_DISPATCH_START_MSG;
+      const formattedMessage = formatMessage(message, context);
+      notify(context, formattedMessage, "info");
     }
 
-    let error: unknown = undefined;
     try {
       // Call next() to continue the middleware chain
       await next();
     } catch (err) {
-      // Capture error but don't rethrow yet
+      // Capture error for error notification
       error = err;
+
+      // Store error in extensions for message formatting
+      if (!context.workingState.extensions) {
+        context.workingState.extensions = {};
+      }
+      context.workingState.extensions._notificationsError =
+        err instanceof Error ? err.message : String(err);
+
+      // Send error notification if enabled
+      if (onError) {
+        const message = typeof onError === "string"
+          ? onError
+          : DEFAULT_ERROR_MSG;
+        const formattedMessage = formatMessage(message, context);
+        notify(context, formattedMessage, "error");
+      }
+
+      // Re-throw the error
+      throw err;
     }
 
-    // Invoke appropriate callback based on outcome
-    if (error !== undefined) {
-      // Dispatch failed - invoke error callback
-      if (onDispatchError && shouldNotify) {
-        const errorObj = error instanceof Error ? error : new Error(String(error));
-        try {
-          await onDispatchError(context, errorObj);
-        } catch (cbErr) {
-          // Silently swallow errors from callbacks to prevent breaking the chain
-          // eslint-disable-next-line no-console
-          console.error(`[NotificationsMiddleware] Callback error: ${cbErr instanceof Error ? cbErr.message : String(cbErr)}`);
-        }
-      }
-      // Rethrow the error to propagate it up the chain
-      throw error;
-    } else {
-      // Dispatch succeeded - invoke complete callback
-      if (onDispatchComplete && shouldNotify) {
-        try {
-          await onDispatchComplete(context);
-        } catch (cbErr) {
-          // Silently swallow errors from callbacks to prevent breaking the chain
-          // eslint-disable-next-line no-console
-          console.error(`[NotificationsMiddleware] Callback error: ${cbErr instanceof Error ? cbErr.message : String(cbErr)}`);
-        }
-      }
+    // Send dispatch complete notification if enabled
+    if (onDispatchComplete) {
+      const message = typeof onDispatchComplete === "string"
+        ? onDispatchComplete
+        : DEFAULT_DISPATCH_COMPLETE_MSG;
+      const formattedMessage = formatMessage(message, context);
+      notify(context, formattedMessage, "info");
     }
   };
 

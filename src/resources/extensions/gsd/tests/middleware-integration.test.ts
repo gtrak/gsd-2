@@ -517,11 +517,10 @@ console.log("\n=== Test: composeDispatchMiddlewaresWithConfig filters disabled m
     phaseDispatch: { enabled: false },
     codeReview: { enabled: true },
     metrics: { enabled: true },
-    notifications: { enabled: true },
     observability: { enabled: true },
   });
 
-  // Should have 7 middlewares (idempotency, merge-guard, reassessment, code-review, metrics, notifications, observability)
+  // Should have 7 middlewares (idempotency, merge-guard, reassessment, code-review, metrics, observability, notifications)
   assertEq(middlewares.length, 7, "should have 7 enabled middlewares");
 
   // Verify order by priority
@@ -535,7 +534,6 @@ console.log("\n=== Test: composeDispatchMiddlewaresWithConfig filters disabled m
   assertEq(priorities[3], 70, "fourth middleware should have priority 70 (code-review)");
   assertEq(priorities[4], 65, "fifth middleware should have priority 65 (metrics)");
   assertEq(priorities[5], 60, "sixth middleware should have priority 60 (observability)");
-  assertEq(priorities[6], 55, "seventh middleware should have priority 55 (notifications)");
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

@@ -78,10 +78,10 @@ export interface MiddlewareChainConfig {
   codeReview?: Partial<MiddlewareConfig>;
   /** Configuration for metrics middleware (priority 65) */
   metrics?: Partial<MiddlewareConfig>;
-  /** Configuration for notifications middleware (priority 55) */
-  notifications?: Partial<MiddlewareConfig>;
   /** Configuration for observability middleware (priority 60) */
   observability?: Partial<MiddlewareConfig>;
+  /** Configuration for notifications middleware (priority 55) */
+  notifications?: Partial<MiddlewareConfig>;
 }
 
 /**
@@ -113,8 +113,8 @@ export function composeDispatchMiddlewaresWithConfig(
     createPhaseDispatchMiddleware(config.phaseDispatch),
     createCodeReviewMiddleware(config.codeReview),
     createMetricsMiddleware(config.metrics),
-    createNotificationsMiddleware(config.notifications),
     createObservabilityMiddleware(config.observability),
+    createNotificationsMiddleware(config.notifications),
   ].filter(m => (m as DispatchMiddleware & { __metadata?: unknown }).__metadata !== undefined);
 
   return middlewares.sort((a, b) => {
@@ -255,8 +255,8 @@ export function composeDispatchMiddlewares(): DispatchMiddleware[] {
     createPhaseDispatchMiddleware(),    // 75
     createCodeReviewMiddleware(),       // 70
     createMetricsMiddleware(),          // 65
-    createNotificationsMiddleware(),    // 55
     createObservabilityMiddleware(),    // 60
+    createNotificationsMiddleware(),    // 55
   ];
 
   // Get registered custom middlewares (only enabled ones) and attach metadata
@@ -287,10 +287,10 @@ const DEFAULT_MIDDLEWARE_PRIORITIES: Record<string, number> = {
   "uat-dispatch": 85,
   reassessment: 80,
   "phase-dispatch": 75,
- "code-review": 70,
-   metrics: 65,
-   notifications: 55,
-   observability: 60,
+  "code-review": 70,
+  metrics: 65,
+  observability: 60,
+  notifications: 55,
 };
 
 /**
@@ -401,11 +401,11 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
   if (shouldInclude("metrics")) {
     middlewares.push(createMetricsMiddleware({ priority: getPriority("metrics"), enabled: true }));
   }
-  if (shouldInclude("notifications")) {
-    middlewares.push(createNotificationsMiddleware({ priority: getPriority("notifications"), enabled: true }));
-  }
   if (shouldInclude("observability")) {
     middlewares.push(createObservabilityMiddleware({ priority: getPriority("observability"), enabled: true }));
+  }
+  if (shouldInclude("notifications")) {
+    middlewares.push(createNotificationsMiddleware({ priority: getPriority("notifications"), enabled: true }));
   }
 
   // Add registered custom middlewares (only enabled ones)

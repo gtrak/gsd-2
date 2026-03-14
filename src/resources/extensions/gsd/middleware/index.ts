@@ -42,6 +42,7 @@ export { MERGE_ERROR_DECISION } from "./merge-guard.js";
 // ─── Compose Functions ─────────────────────────────────────────────────────
 
 import type { DispatchMiddleware, MiddlewareConfig, GSDMiddleware, DispatchMiddlewareRegistration } from "./types.js";
+import type { GSDPreferences, MiddlewarePreferences } from "../preferences.js";
 import { createIdempotencyMiddleware } from "./idempotency.js";
 import { createBudgetCeilingMiddleware } from "./budget-ceiling.js";
 import { createMergeGuardMiddleware } from "./merge-guard.js";
@@ -252,6 +253,147 @@ export function composeDispatchMiddlewares(): DispatchMiddleware[] {
 
   // Combine all middlewares
   const allMiddlewares = [...builtInMiddlewares, ...customMiddlewares];
+
+  // Sort by priority (highest first)
+  return allMiddlewares.sort((a, b) => {
+    const priorityA = (a as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
+    const priorityB = (b as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
+    return priorityB - priorityA;
+  });
+}
+
+// ─── Compose Function with Preferences ─────────────────────────────────────
+
+/**
+ * Default priorities for built-in middlewares.
+ */
+const DEFAULT_MIDDLEWARE_PRIORITIES: Record<string, number> = {
+  idempotency: 100,
+  "budget-ceiling": 95,
+  "merge-guard": 90,
+  "uat-dispatch": 85,
+  reassessment: 80,
+  "phase-dispatch": 75,
+  "code-review": 70,
+  observability: 60,
+};
+
+/**
+ * Composes dispatch middlewares using GSD preferences configuration.
+ *
+ * This function allows configuring middlewares via preferences.md, supporting:
+ * - Enabling/disabling individual middlewares
+ * - Overriding middleware priorities
+ * - Merging global and project preferences
+ *
+ * If no middleware configuration is provided, all built-in middlewares are
+ * returned with their default priorities.
+ *
+ * @param prefs - GSD preferences containing optional middleware configuration
+ * @returns An array of enabled DispatchMiddleware functions sorted by priority
+ *
+ * @example
+ * ```typescript
+ * const prefs = loadEffectiveGSDPreferences()?.preferences ?? {};
+ * const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+ * ```
+ *
+ * @example
+ * ```yaml
+ * # In preferences.md
+ * gsd:
+ *   middleware:
+ *     enabled:
+ *       - name: idempotency
+ *         priority: 100
+ *       - name: budget-ceiling
+ *         priority: 95
+ *     disabled:
+ *       - uat-dispatch
+ * ```
+ */
+export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences): DispatchMiddleware[] {
+  // Get middleware preferences from GSD preferences
+  const middlewarePrefs = prefs.middleware;
+
+  // If no middleware preferences, return all built-in middlewares with defaults
+  if (!middlewarePrefs) {
+    return composeDispatchMiddlewares();
+  }
+
+  // Build a map of enabled middlewares with their priorities
+  const enabledMap = new Map<string, number>();
+  const disabledSet = new Set<string>();
+
+  // Process enabled middlewares
+  if (middlewarePrefs.enabled && middlewarePrefs.enabled.length > 0) {
+    for (const entry of middlewarePrefs.enabled) {
+      if (!entry.name) continue;
+      const priority = entry.priority ?? DEFAULT_MIDDLEWARE_PRIORITIES[entry.name] ?? 50;
+      enabledMap.set(entry.name, priority);
+    }
+  }
+
+  // Process disabled middlewares
+  if (middlewarePrefs.disabled && middlewarePrefs.disabled.length > 0) {
+    for (const name of middlewarePrefs.disabled) {
+      disabledSet.add(name);
+    }
+  }
+
+  // If enabled list is specified, only include those middlewares
+  const useEnabledList = middlewarePrefs.enabled && middlewarePrefs.enabled.length > 0;
+
+  // Create middlewares based on configuration
+  const middlewares: DispatchMiddleware[] = [];
+
+  // Helper to check if a middleware should be included
+  function shouldInclude(name: string): boolean {
+    if (disabledSet.has(name)) return false;
+    if (useEnabledList) {
+      return enabledMap.has(name);
+    }
+    return true;
+  }
+
+  // Helper to get priority for a middleware
+  function getPriority(name: string): number {
+    return enabledMap.get(name) ?? DEFAULT_MIDDLEWARE_PRIORITIES[name] ?? 50;
+  }
+
+  // Create each middleware if it should be included
+  if (shouldInclude("idempotency")) {
+    middlewares.push(createIdempotencyMiddleware({ priority: getPriority("idempotency"), enabled: true }));
+  }
+  if (shouldInclude("budget-ceiling")) {
+    middlewares.push(createBudgetCeilingMiddleware({ priority: getPriority("budget-ceiling"), enabled: true }));
+  }
+  if (shouldInclude("merge-guard")) {
+    middlewares.push(createMergeGuardMiddleware({ priority: getPriority("merge-guard"), enabled: true }));
+  }
+  if (shouldInclude("uat-dispatch")) {
+    middlewares.push(createUatDispatchMiddleware({ priority: getPriority("uat-dispatch"), enabled: true }));
+  }
+  if (shouldInclude("reassessment")) {
+    middlewares.push(createReassessmentMiddleware({ priority: getPriority("reassessment"), enabled: true }));
+  }
+  if (shouldInclude("phase-dispatch")) {
+    middlewares.push(createPhaseDispatchMiddleware({ priority: getPriority("phase-dispatch"), enabled: true }));
+  }
+  if (shouldInclude("code-review")) {
+    middlewares.push(createCodeReviewMiddleware({ priority: getPriority("code-review"), enabled: true }));
+  }
+  if (shouldInclude("observability")) {
+    middlewares.push(createObservabilityMiddleware({ priority: getPriority("observability"), enabled: true }));
+  }
+
+  // Add registered custom middlewares (only enabled ones)
+  const customMiddlewares = getRegisteredDispatchMiddlewares()
+    .filter(reg => reg.enabled && !disabledSet.has(reg.name) && (!useEnabledList || enabledMap.has(reg.name)))
+    .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, priority: reg.priority }));
+
+  // Combine all middlewares
+  const allMiddlewares = [...middlewares, ...customMiddlewares];
 
   // Sort by priority (highest first)
   return allMiddlewares.sort((a, b) => {

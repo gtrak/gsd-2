@@ -51,6 +51,15 @@ export interface HooksPreferences {
   disabled?: string[];
 }
 
+export interface MiddlewarePreferences {
+  enabled?: Array<{
+    name: string;
+    priority?: number;
+    config?: Record<string, unknown>;
+  }>;
+  disabled?: string[];
+}
+
 export interface GSDPreferences {
   version?: number;
   always_use_skills?: string[];
@@ -70,6 +79,7 @@ export interface GSDPreferences {
   code_review_model?: string;
   code_review_fix_model?: string;
   hooks?: HooksPreferences;
+  middleware?: MiddlewarePreferences;
 }
 
 export interface LoadedGSDPreferences {
@@ -518,6 +528,93 @@ export function resolveAutoSupervisorConfig(): AutoSupervisorConfig {
   };
 }
 
+// ─── Middleware Configuration ──────────────────────────────────────────────
+
+/**
+ * Loads middleware configuration from GSD preferences.
+ * Validates and normalizes the middleware configuration, applying defaults
+ * and filtering invalid values.
+ *
+ * @param prefs - The GSD preferences to load middleware config from
+ * @returns A MiddlewarePreferences object with validated configuration
+ *
+ * @example
+ * ```typescript
+ * const config = loadMiddlewareConfig(prefs);
+ * console.log(config.enabled);  // [{ name: "idempotency", priority: 100 }, ...]
+ * console.log(config.disabled);  // ["uat-dispatch", ...]
+ * ```
+ */
+export function loadMiddlewareConfig(prefs: GSDPreferences): MiddlewarePreferences {
+  const result: MiddlewarePreferences = {};
+
+  const middlewarePrefs = prefs.middleware;
+  if (!middlewarePrefs) {
+    return result;
+  }
+
+  // Process enabled middlewares
+  if (middlewarePrefs.enabled && middlewarePrefs.enabled.length > 0) {
+    const enabled: Array<{ name: string; priority: number; config?: Record<string, unknown> }> = [];
+
+    for (const entry of middlewarePrefs.enabled) {
+      if (!entry || typeof entry !== "object" || !entry.name) {
+        continue; // Skip invalid entries
+      }
+
+      const name = typeof entry.name === "string" ? entry.name.trim() : "";
+      if (!name) {
+        continue; // Skip entries without a valid name
+      }
+
+      // Validate and apply default priority
+      let priority = 50; // Default priority
+      if (entry.priority !== undefined) {
+        const rawPriority = entry.priority;
+        if (typeof rawPriority === "number" && Number.isFinite(rawPriority)) {
+          priority = rawPriority;
+        } else if (typeof rawPriority === "string" && !isNaN(Number(rawPriority))) {
+          priority = Number(rawPriority);
+        }
+      }
+
+      // Filter invalid priorities (must be between 0 and 100)
+      if (priority < 0 || priority > 100) {
+        continue; // Skip entries with invalid priorities
+      }
+
+      const normalizedEntry: { name: string; priority: number; config?: Record<string, unknown> } = {
+        name,
+        priority,
+      };
+
+      // Include config if present and valid
+      if (entry.config && typeof entry.config === "object" && !Array.isArray(entry.config)) {
+        normalizedEntry.config = entry.config as Record<string, unknown>;
+      }
+
+      enabled.push(normalizedEntry);
+    }
+
+    if (enabled.length > 0) {
+      result.enabled = enabled;
+    }
+  }
+
+  // Process disabled middlewares
+  if (middlewarePrefs.disabled && middlewarePrefs.disabled.length > 0) {
+    const disabled = middlewarePrefs.disabled
+      .filter(item => typeof item === "string" && item.trim() !== "")
+      .map(item => item.trim());
+
+    if (disabled.length > 0) {
+      result.disabled = disabled;
+    }
+  }
+
+  return result;
+}
+
 function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPreferences {
   return {
     version: override.version ?? base.version,
@@ -537,7 +634,73 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     git: (base.git || override.git)
       ? { ...(base.git ?? {}), ...(override.git ?? {}) }
       : undefined,
+    hooks: mergeHooksPreferences(base.hooks, override.hooks),
+    middleware: mergeMiddlewarePreferences(base.middleware, override.middleware),
   };
+}
+
+function mergeHooksPreferences(
+  base?: HooksPreferences,
+  override?: HooksPreferences
+): HooksPreferences | undefined {
+  if (!base && !override) return undefined;
+
+  const result: HooksPreferences = {};
+
+  // Merge enabled hooks - override takes precedence by name
+  const enabledMap = new Map<string, { name: string; priority?: number; config?: Record<string, unknown> }>();
+  for (const entry of base?.enabled ?? []) {
+    if (entry.name) enabledMap.set(entry.name, entry);
+  }
+  for (const entry of override?.enabled ?? []) {
+    if (entry.name) enabledMap.set(entry.name, entry);
+  }
+  if (enabledMap.size > 0) {
+    result.enabled = Array.from(enabledMap.values());
+  }
+
+  // Merge disabled hooks - combine both lists
+  const disabledSet = new Set([
+    ...(base?.disabled ?? []),
+    ...(override?.disabled ?? []),
+  ]);
+  if (disabledSet.size > 0) {
+    result.disabled = Array.from(disabledSet);
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function mergeMiddlewarePreferences(
+  base?: MiddlewarePreferences,
+  override?: MiddlewarePreferences
+): MiddlewarePreferences | undefined {
+  if (!base && !override) return undefined;
+
+  const result: MiddlewarePreferences = {};
+
+  // Merge enabled middlewares - override takes precedence by name
+  const enabledMap = new Map<string, { name: string; priority?: number; config?: Record<string, unknown> }>();
+  for (const entry of base?.enabled ?? []) {
+    if (entry.name) enabledMap.set(entry.name, entry);
+  }
+  for (const entry of override?.enabled ?? []) {
+    if (entry.name) enabledMap.set(entry.name, entry);
+  }
+  if (enabledMap.size > 0) {
+    result.enabled = Array.from(enabledMap.values());
+  }
+
+  // Merge disabled middlewares - combine both lists
+  const disabledSet = new Set([
+    ...(base?.disabled ?? []),
+    ...(override?.disabled ?? []),
+  ]);
+  if (disabledSet.size > 0) {
+    result.disabled = Array.from(disabledSet);
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function validatePreferences(preferences: GSDPreferences): {
@@ -670,6 +833,76 @@ function validatePreferences(preferences: GSDPreferences): {
 
     if (Object.keys(git).length > 0) {
       validated.git = git as GitPreferences;
+    }
+  }
+
+  // ─── Middleware Preferences ─────────────────────────────────────────────
+  if (preferences.middleware && typeof preferences.middleware === "object") {
+    const middleware: MiddlewarePreferences = {};
+    const m = preferences.middleware;
+
+    // Validate enabled middlewares
+    if (m.enabled && Array.isArray(m.enabled)) {
+      const validEnabled: Array<{ name: string; priority?: number; config?: Record<string, unknown> }> = [];
+      for (const entry of m.enabled) {
+        if (!entry || typeof entry !== "object") {
+          errors.push("invalid middleware enabled entry");
+          continue;
+        }
+        const nameEntry = entry as { name?: unknown };
+        if (typeof nameEntry.name !== "string" || !nameEntry.name.trim()) {
+          errors.push("middleware enabled entry missing name");
+          continue;
+        }
+        const validatedEntry: { name: string; priority?: number; config?: Record<string, unknown> } = {
+          name: nameEntry.name.trim(),
+        };
+
+        // Validate priority if present
+        if (entry.priority !== undefined) {
+          const rawPriority = entry.priority;
+          if (typeof rawPriority === "number" && Number.isFinite(rawPriority)) {
+            if (rawPriority < 0 || rawPriority > 100) {
+              errors.push(`middleware priority ${rawPriority} out of range (0-100)`);
+            } else {
+              validatedEntry.priority = rawPriority;
+            }
+          } else if (typeof rawPriority === "string" && !isNaN(Number(rawPriority))) {
+            const numPriority = Number(rawPriority);
+            if (numPriority < 0 || numPriority > 100) {
+              errors.push(`middleware priority ${numPriority} out of range (0-100)`);
+            } else {
+              validatedEntry.priority = numPriority;
+            }
+          } else {
+            errors.push("middleware priority must be a number");
+          }
+        }
+
+        // Validate config if present
+        if (entry.config && typeof entry.config === "object" && !Array.isArray(entry.config)) {
+          validatedEntry.config = entry.config as Record<string, unknown>;
+        }
+
+        validEnabled.push(validatedEntry);
+      }
+      if (validEnabled.length > 0) {
+        middleware.enabled = validEnabled;
+      }
+    }
+
+    // Validate disabled middlewares
+    if (m.disabled && Array.isArray(m.disabled)) {
+      const validDisabled = m.disabled
+        .filter(item => typeof item === "string" && item.trim() !== "")
+        .map(item => item.trim());
+      if (validDisabled.length > 0) {
+        middleware.disabled = validDisabled;
+      }
+    }
+
+    if (Object.keys(middleware).length > 0) {
+      validated.middleware = middleware;
     }
   }
 

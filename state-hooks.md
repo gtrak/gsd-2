@@ -9,9 +9,10 @@ This document describes the extension system for the GSD state machine. It enabl
 - ✅ Phase 1: Core Infrastructure (4/4 tasks)
 - ✅ Phase 2: Task Lifecycle Hook (6/6 tasks)
 - ✅ Phase 3: Hook Integration (2/2 tasks)
-- ✅ Phase 4: Configuration (1/3 tasks - hooks field added)
-- ⏳ Phase 4: Hook Loader (not started)
-- ⏳ Phase 5: Documentation (not started)
+- ✅ Phase 4: Configuration (3/3 tasks)
+- ✅ Phase 5: Hook Loader & Documentation
+- ✅ Phase 6: Middleware State Machine Refactor (12/12 tasks - COMPLETED)
+- ⏳ Phase 7: Consolidation & Extension API (not started)
 
 **Key Principles:**
 - Hooks are middleware that intercept `/gsd next` flow
@@ -402,6 +403,81 @@ On startup, the GSD extension:
 1. Implement review-loop as example hook
 2. Write comprehensive review-loop tests
 3. Document self-recovery patterns
+
+### Phase 6: Middleware State Machine Refactor ✅ COMPLETED
+Replaced inline dispatch logic with composable middleware chain.
+
+**Deliverables:**
+1. **Shared Types** (`middleware/types.ts`): DispatchContext, DispatchDecision, MiddlewareConfig
+2. **Eight Middlewares:**
+   - IdempotencyMiddleware (priority 100) - skip completed units
+   - BudgetCeilingMiddleware (priority 95) - pause on budget exceeded
+   - MergeGuardMiddleware (priority 90) - merge done slices before continuing
+   - UatDispatchMiddleware (priority 85) - dispatch UAT after merge
+   - ReassessmentMiddleware (priority 80) - adaptive replanning
+   - PhaseDispatchMiddleware (priority 75) - main phase-based dispatch
+   - CodeReviewMiddleware (priority 70) - review/fix cycle
+   - ObservabilityMiddleware (priority 60) - emit warnings
+3. **Compose Functions** (`middleware/index.ts`): composeDispatchMiddlewares(), composeDispatchMiddlewaresWithConfig()
+4. **Integration** (`auto.ts`): executeDispatchMiddlewares() orchestrates the chain
+5. **Tests**: 150+ assertions across all middlewares and integration tests
+
+**Files Created:**
+- `src/resources/extensions/gsd/middleware/` (9 files)
+- `src/resources/extensions/gsd/tests/*-middleware.test.ts` (8 test files)
+- `src/resources/extensions/gsd/tests/middleware-integration.test.ts`
+
+### Phase 7: Consolidation & Extension API
+Consolidate the two hook systems and expose middleware API to extension authors.
+
+**Goals:**
+1. **Unify Hook Systems**
+   - Merge original executeMiddlewareChain with new dispatch middlewares
+   - Single registration API: registerDispatchMiddleware()
+   - Two execution phases: pre-dispatch hooks, dispatch decision
+
+2. **Configuration via Preferences**
+   ```yaml
+   gsd:
+     middleware:
+       enabled:
+         - name: budget-ceiling
+           priority: 95
+         - name: code-review
+           priority: 70
+       disabled:
+         - merge-guard
+   ```
+
+3. **Extension Author API**
+   ```typescript
+   // Extension authors can register middleware
+   registerDispatchMiddleware({
+     name: 'my-custom-check',
+     priority: 85,
+     middleware: async (ctx, next) => { ... }
+   });
+   ```
+
+4. **Documentation**
+   - How to write a middleware
+   - Priority guidelines (100=first, 60=last)
+   - Testing patterns
+   - Decision types and special handling
+
+5. **Additional Middlewares**
+   - MetricsMiddleware - track before/after dispatch
+   - NotificationsMiddleware - send notifications
+   - ValidationMiddleware - validate state before dispatch
+
+**Success Criteria:**
+- [ ] Single unified middleware registration system
+- [ ] Middlewares configurable via preferences.md
+- [ ] Extension authors can register custom middlewares
+- [ ] Documentation complete with examples
+- [ ] All existing tests pass
+- [ ] 90%+ test coverage on middleware system
+
 
 ---
 

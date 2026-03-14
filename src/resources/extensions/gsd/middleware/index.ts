@@ -15,6 +15,7 @@ export type {
   DispatchMiddlewareRegistration,
   GSDMiddleware,
 } from "./types.js";
+export type { NotificationsConfig } from "./notifications.js";
 
 // ─── Middleware Factory Exports ────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ export { createPhaseDispatchMiddleware } from "./phase-dispatch.js";
 export { createCodeReviewMiddleware } from "./code-review.js";
 export { createObservabilityMiddleware } from "./observability.js";
 export { createMetricsMiddleware } from "./metrics.js";
+export { createNotificationsMiddleware } from "./notifications.js";
 
 // ─── Decision Constant Exports ─────────────────────────────────────────────
 
@@ -53,6 +55,7 @@ import { createPhaseDispatchMiddleware } from "./phase-dispatch.js";
 import { createCodeReviewMiddleware } from "./code-review.js";
 import { createObservabilityMiddleware } from "./observability.js";
 import { createMetricsMiddleware } from "./metrics.js";
+import { createNotificationsMiddleware } from "./notifications.js";
 
 /**
  * Configuration interface for composing middleware chains with custom options.
@@ -73,10 +76,12 @@ export interface MiddlewareChainConfig {
   phaseDispatch?: Partial<MiddlewareConfig>;
   /** Configuration for code review middleware (priority 70) */
   codeReview?: Partial<MiddlewareConfig>;
-  /** Configuration for observability middleware (priority 60) */
-  observability?: Partial<MiddlewareConfig>;
   /** Configuration for metrics middleware (priority 65) */
   metrics?: Partial<MiddlewareConfig>;
+  /** Configuration for notifications middleware (priority 55) */
+  notifications?: Partial<MiddlewareConfig>;
+  /** Configuration for observability middleware (priority 60) */
+  observability?: Partial<MiddlewareConfig>;
 }
 
 /**
@@ -108,6 +113,7 @@ export function composeDispatchMiddlewaresWithConfig(
     createPhaseDispatchMiddleware(config.phaseDispatch),
     createCodeReviewMiddleware(config.codeReview),
     createMetricsMiddleware(config.metrics),
+    createNotificationsMiddleware(config.notifications),
     createObservabilityMiddleware(config.observability),
   ].filter(m => (m as DispatchMiddleware & { __metadata?: unknown }).__metadata !== undefined);
 
@@ -249,6 +255,7 @@ export function composeDispatchMiddlewares(): DispatchMiddleware[] {
     createPhaseDispatchMiddleware(),    // 75
     createCodeReviewMiddleware(),       // 70
     createMetricsMiddleware(),          // 65
+    createNotificationsMiddleware(),    // 55
     createObservabilityMiddleware(),    // 60
   ];
 
@@ -280,9 +287,10 @@ const DEFAULT_MIDDLEWARE_PRIORITIES: Record<string, number> = {
   "uat-dispatch": 85,
   reassessment: 80,
   "phase-dispatch": 75,
-  "code-review": 70,
-  metrics: 65,
-  observability: 60,
+ "code-review": 70,
+   metrics: 65,
+   notifications: 55,
+   observability: 60,
 };
 
 /**
@@ -392,6 +400,9 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
   }
   if (shouldInclude("metrics")) {
     middlewares.push(createMetricsMiddleware({ priority: getPriority("metrics"), enabled: true }));
+  }
+  if (shouldInclude("notifications")) {
+    middlewares.push(createNotificationsMiddleware({ priority: getPriority("notifications"), enabled: true }));
   }
   if (shouldInclude("observability")) {
     middlewares.push(createObservabilityMiddleware({ priority: getPriority("observability"), enabled: true }));

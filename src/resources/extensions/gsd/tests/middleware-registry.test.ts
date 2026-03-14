@@ -219,8 +219,8 @@ console.log("\n=== Test 4: composeDispatchMiddlewares includes registered custom
 
   const composed = composeDispatchMiddlewares();
 
-  // Should have 8 built-in + 1 custom = 9 middlewares
-  assertEq(composed.length, 9, "should have 9 middlewares (8 built-in + 1 custom)");
+  // Should have 9 built-in + 1 custom = 10 middlewares
+  assertEq(composed.length, 10, "should have 10 middlewares (9 built-in + 1 custom)");
 
   // Find the custom middleware in the composed list
   const customMiddleware = composed.find(
@@ -254,8 +254,8 @@ console.log("\n=== Test 5: disabled middlewares are filtered out ===");
 
   const composed = composeDispatchMiddlewares();
 
-  // Should have 8 built-in + 1 enabled = 9 middlewares (disabled filtered out)
-  assertEq(composed.length, 9, "should have 9 middlewares (disabled filtered out)");
+  // Should have 9 built-in + 1 enabled = 10 middlewares (disabled filtered out)
+  assertEq(composed.length, 10, "should have 10 middlewares (disabled filtered out)");
 
   // Verify enabled middleware is present
   const enabledMiddleware = composed.find(
@@ -293,7 +293,7 @@ console.log("\n=== Test 6: backward compatibility - existing middleware factorie
 
   // Test that composeDispatchMiddlewares returns the expected built-in middlewares
   const composed = composeDispatchMiddlewares();
-  assertEq(composed.length, 8, "should have 8 built-in middlewares");
+  assertEq(composed.length, 9, "should have 9 built-in middlewares");
 
   // Verify expected priorities
   const priorities = composed.map(
@@ -308,7 +308,8 @@ console.log("\n=== Test 6: backward compatibility - existing middleware factorie
   assertEq(priorities[4], 80, "fifth middleware should have priority 80 (reassessment)");
   assertEq(priorities[5], 75, "sixth middleware should have priority 75 (phase-dispatch)");
   assertEq(priorities[6], 70, "seventh middleware should have priority 70 (code-review)");
-  assertEq(priorities[7], 60, "eighth middleware should have priority 60 (observability)");
+  assertEq(priorities[7], 65, "eighth middleware should have priority 65 (metrics)");
+  assertEq(priorities[8], 60, "ninth middleware should have priority 60 (observability)");
 }
 
 // Test 7: registerDispatchMiddleware defaults priority to 50

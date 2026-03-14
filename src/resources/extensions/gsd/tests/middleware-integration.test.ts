@@ -469,8 +469,8 @@ console.log("\n=== Test: composeDispatchMiddlewares returns correct order ===");
 {
   const middlewares = composeDispatchMiddlewares();
 
-  // Verify we have all 8 middlewares
-  assertEq(middlewares.length, 8, "should have 8 middlewares");
+  // Verify we have all 9 middlewares
+  assertEq(middlewares.length, 9, "should have 9 middlewares");
 
   // Verify order by priority (highest first)
   const priorities = middlewares.map(
@@ -484,7 +484,8 @@ console.log("\n=== Test: composeDispatchMiddlewares returns correct order ===");
   assertEq(priorities[4], 80, "fifth middleware should have priority 80 (reassessment)");
   assertEq(priorities[5], 75, "sixth middleware should have priority 75 (phase-dispatch)");
   assertEq(priorities[6], 70, "seventh middleware should have priority 70 (code-review)");
-  assertEq(priorities[7], 60, "eighth middleware should have priority 60 (observability)");
+  assertEq(priorities[7], 65, "eighth middleware should have priority 65 (metrics)");
+  assertEq(priorities[8], 60, "ninth middleware should have priority 60 (observability)");
 
   // Verify names
   const names = middlewares.map(
@@ -498,7 +499,8 @@ console.log("\n=== Test: composeDispatchMiddlewares returns correct order ===");
   assertEq(names[4], "reassessment", "fifth middleware should be reassessment");
   assertEq(names[5], "phase-dispatch", "sixth middleware should be phase-dispatch");
   assertEq(names[6], "code-review", "seventh middleware should be code-review");
-  assertEq(names[7], "observability", "eighth middleware should be observability");
+  assertEq(names[7], "metrics", "eighth middleware should be metrics");
+  assertEq(names[8], "observability", "ninth middleware should be observability");
 }
 
 // Test 11: composeDispatchMiddlewaresWithConfig filters disabled middlewares
@@ -512,11 +514,12 @@ console.log("\n=== Test: composeDispatchMiddlewaresWithConfig filters disabled m
     reassessment: { enabled: true },
     phaseDispatch: { enabled: false },
     codeReview: { enabled: true },
+    metrics: { enabled: true },
     observability: { enabled: true },
   });
 
-  // Should have 5 middlewares (idempotency, merge-guard, reassessment, code-review, observability)
-  assertEq(middlewares.length, 5, "should have 5 enabled middlewares");
+  // Should have 6 middlewares (idempotency, merge-guard, reassessment, code-review, metrics, observability)
+  assertEq(middlewares.length, 6, "should have 6 enabled middlewares");
 
   // Verify order by priority
   const priorities = middlewares.map(
@@ -527,7 +530,8 @@ console.log("\n=== Test: composeDispatchMiddlewaresWithConfig filters disabled m
   assertEq(priorities[1], 90, "second middleware should have priority 90 (merge-guard)");
   assertEq(priorities[2], 80, "third middleware should have priority 80 (reassessment)");
   assertEq(priorities[3], 70, "fourth middleware should have priority 70 (code-review)");
-  assertEq(priorities[4], 60, "fifth middleware should have priority 60 (observability)");
+  assertEq(priorities[4], 65, "fifth middleware should have priority 65 (metrics)");
+  assertEq(priorities[5], 60, "sixth middleware should have priority 60 (observability)");
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

@@ -225,8 +225,8 @@ console.log("\n=== Test 2: disabled middlewares from preferences are not execute
 
   const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
 
-  // Should have 5 middlewares (8 - 3 disabled)
-  assertEq(middlewares.length, 5, "should have 5 middlewares (3 disabled)");
+  // Should have 6 middlewares (9 - 3 disabled)
+  assertEq(middlewares.length, 6, "should have 6 middlewares (3 disabled)");
 
   // Verify disabled middlewares are not present
   const names = middlewares.map(getMiddlewareName);
@@ -278,8 +278,8 @@ console.log("\n=== Test 4: falls back to defaults when no middleware config ==="
 
   const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
 
-  // Should have all 8 default middlewares
-  assertEq(middlewares.length, 8, "should have all 8 default middlewares");
+  // Should have all 9 default middlewares
+  assertEq(middlewares.length, 9, "should have all 9 default middlewares");
 
   // Verify default order
   const names = middlewares.map(getMiddlewareName);
@@ -290,7 +290,8 @@ console.log("\n=== Test 4: falls back to defaults when no middleware config ==="
   assertEq(names[4], "reassessment", "fifth middleware should be reassessment");
   assertEq(names[5], "phase-dispatch", "sixth middleware should be phase-dispatch");
   assertEq(names[6], "code-review", "seventh middleware should be code-review");
-  assertEq(names[7], "observability", "eighth middleware should be observability");
+  assertEq(names[7], "metrics", "eighth middleware should be metrics");
+  assertEq(names[8], "observability", "ninth middleware should be observability");
 }
 
 // Test 5: falls back to defaults when no preferences file
@@ -304,8 +305,8 @@ console.log("\n=== Test 5: falls back to defaults when no preferences file ===")
   // and the code falls back to composeDispatchMiddlewares()
   const middlewares = composeDispatchMiddlewares();
 
-  // Should have all 8 default middlewares
-  assertEq(middlewares.length, 8, "should have all 8 default middlewares when no prefs");
+  // Should have all 9 default middlewares
+  assertEq(middlewares.length, 9, "should have all 9 default middlewares when no prefs");
 }
 
 // Test 6: custom registered middlewares are still included
@@ -329,8 +330,8 @@ console.log("\n=== Test 6: custom registered middlewares are still included ==="
 
   const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
 
-  // Should have 9 middlewares (8 default + 1 custom)
-  assertEq(middlewares.length, 9, "should have 9 middlewares (8 default + 1 custom)");
+  // Should have 10 middlewares (9 default + 1 custom)
+  assertEq(middlewares.length, 10, "should have 10 middlewares (9 default + 1 custom)");
 
   // Verify custom middleware is present and in correct position (between merge-guard and uat-dispatch)
   const names = middlewares.map(getMiddlewareName);

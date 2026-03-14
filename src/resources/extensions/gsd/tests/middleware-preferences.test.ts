@@ -284,8 +284,8 @@ console.log("\n=== Test 9: composeDispatchMiddlewaresWithPreferences uses defaul
   const prefs: GSDPreferences = {};
   const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
 
-  // Should have all 8 default middlewares
-  assertArrayLength(middlewares, 8, "should have 8 default middlewares");
+  // Should have all 9 default middlewares
+  assertArrayLength(middlewares, 9, "should have 9 default middlewares");
 
   // Verify expected priorities
   const priorities = middlewares.map(m => (m as any).__metadata?.priority);
@@ -296,7 +296,8 @@ console.log("\n=== Test 9: composeDispatchMiddlewaresWithPreferences uses defaul
   assertEq(priorities[4], 80, "fifth middleware should have priority 80 (reassessment)");
   assertEq(priorities[5], 75, "sixth middleware should have priority 75 (phase-dispatch)");
   assertEq(priorities[6], 70, "seventh middleware should have priority 70 (code-review)");
-  assertEq(priorities[7], 60, "eighth middleware should have priority 60 (observability)");
+  assertEq(priorities[7], 65, "eighth middleware should have priority 65 (metrics)");
+  assertEq(priorities[8], 60, "ninth middleware should have priority 60 (observability)");
 }
 
 // Test 10: composeDispatchMiddlewaresWithPreferences merges global and project prefs

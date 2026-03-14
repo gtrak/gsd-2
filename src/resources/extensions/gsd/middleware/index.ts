@@ -29,6 +29,7 @@ export { createReassessmentMiddleware } from "./reassessment.js";
 export { createPhaseDispatchMiddleware } from "./phase-dispatch.js";
 export { createCodeReviewMiddleware } from "./code-review.js";
 export { createObservabilityMiddleware } from "./observability.js";
+export { createMetricsMiddleware } from "./metrics.js";
 
 // ─── Decision Constant Exports ─────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ import { createReassessmentMiddleware } from "./reassessment.js";
 import { createPhaseDispatchMiddleware } from "./phase-dispatch.js";
 import { createCodeReviewMiddleware } from "./code-review.js";
 import { createObservabilityMiddleware } from "./observability.js";
+import { createMetricsMiddleware } from "./metrics.js";
 
 /**
  * Configuration interface for composing middleware chains with custom options.
@@ -73,6 +75,8 @@ export interface MiddlewareChainConfig {
   codeReview?: Partial<MiddlewareConfig>;
   /** Configuration for observability middleware (priority 60) */
   observability?: Partial<MiddlewareConfig>;
+  /** Configuration for metrics middleware (priority 65) */
+  metrics?: Partial<MiddlewareConfig>;
 }
 
 /**
@@ -103,6 +107,7 @@ export function composeDispatchMiddlewaresWithConfig(
     createReassessmentMiddleware(config.reassessment),
     createPhaseDispatchMiddleware(config.phaseDispatch),
     createCodeReviewMiddleware(config.codeReview),
+    createMetricsMiddleware(config.metrics),
     createObservabilityMiddleware(config.observability),
   ].filter(m => (m as DispatchMiddleware & { __metadata?: unknown }).__metadata !== undefined);
 
@@ -243,6 +248,7 @@ export function composeDispatchMiddlewares(): DispatchMiddleware[] {
     createReassessmentMiddleware(),     // 80
     createPhaseDispatchMiddleware(),    // 75
     createCodeReviewMiddleware(),       // 70
+    createMetricsMiddleware(),          // 65
     createObservabilityMiddleware(),    // 60
   ];
 
@@ -275,6 +281,7 @@ const DEFAULT_MIDDLEWARE_PRIORITIES: Record<string, number> = {
   reassessment: 80,
   "phase-dispatch": 75,
   "code-review": 70,
+  metrics: 65,
   observability: 60,
 };
 
@@ -382,6 +389,9 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
   }
   if (shouldInclude("code-review")) {
     middlewares.push(createCodeReviewMiddleware({ priority: getPriority("code-review"), enabled: true }));
+  }
+  if (shouldInclude("metrics")) {
+    middlewares.push(createMetricsMiddleware({ priority: getPriority("metrics"), enabled: true }));
   }
   if (shouldInclude("observability")) {
     middlewares.push(createObservabilityMiddleware({ priority: getPriority("observability"), enabled: true }));

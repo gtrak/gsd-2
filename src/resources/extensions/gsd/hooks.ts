@@ -59,6 +59,9 @@ export interface HookRegistration {
 const hookRegistry = new Map<string, HookRegistration>();
 
 /**
+ * @deprecated Use {@link registerDispatchMiddleware} from `./middleware/index.js` instead.
+ * This function is kept for backward compatibility.
+ *
  * Register a hook with the GSD system.
  * Later registrations with the same name will overwrite earlier ones.
  */

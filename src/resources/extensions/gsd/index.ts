@@ -556,3 +556,50 @@ function escapeRegExp(value: string): string {
 function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
+
+// ── Public API Re-exports for Extension Authors ────────────────────────────
+
+/**
+ * Re-export middleware registration functions and types for extension authors.
+ * These exports allow extension authors to register custom dispatch middlewares.
+ *
+ * @example
+ * ```typescript
+ * import { registerDispatchMiddleware, DispatchContext } from "../gsd/index.js";
+ *
+ * registerDispatchMiddleware({
+ *   name: "my-custom-check",
+ *   priority: 85,
+ *   middleware: async (ctx: DispatchContext, next) => {
+ *     // Custom logic
+ *     await next();
+ *   }
+ * });
+ * ```
+ */
+export {
+  registerDispatchMiddleware,
+  getRegisteredDispatchMiddlewares,
+  clearRegisteredDispatchMiddlewares,
+  composeDispatchMiddlewares,
+  composeDispatchMiddlewaresWithPreferences,
+  composeDispatchMiddlewaresWithConfig,
+} from "./middleware/index.js";
+
+/**
+ * Re-export middleware types for extension authors.
+ */
+export type {
+  DispatchContext,
+  DispatchDecision,
+  DispatchMiddleware,
+  MiddlewareConfig,
+  MiddlewareFactory,
+  DispatchMiddlewareRegistration,
+  GSDMiddleware,
+} from "./middleware/index.js";
+
+/**
+ * Re-export HookContext for extension authors.
+ */
+export type { HookContext } from "./hooks.js";

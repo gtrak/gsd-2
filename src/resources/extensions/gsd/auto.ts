@@ -39,7 +39,7 @@ import {
   readUnitRuntimeRecord,
   writeUnitRuntimeRecord,
 } from "./unit-runtime.js";
-import { resolveAutoSupervisorConfig, resolveModelForUnit, resolveSkillDiscoveryMode, loadEffectiveGSDPreferences } from "./preferences.js";
+import { resolveAutoSupervisorConfig, resolveModelForUnit, resolveSkillDiscoveryMode, loadEffectiveGSDPreferences, loadMiddlewareConfig } from "./preferences.js";
 import type { GSDPreferences } from "./preferences.js";
 import {
   validatePlanBoundary,
@@ -84,7 +84,7 @@ import { makeUI, GLYPH, INDENT } from "../shared/ui.js";
 import { showNextAction } from "../shared/next-action-ui.js";
 import { TaskLifecycleHook } from "./task-lifecycle-hook.js";
 import { registerHook, getRegisteredHooks, executeMiddlewareChain } from "./hooks.js";
-import { composeDispatchMiddlewares } from "./middleware/index.js";
+import { composeDispatchMiddlewares, composeDispatchMiddlewaresWithPreferences } from "./middleware/index.js";
 import type { DispatchContext, DispatchDecision } from "./middleware/types.js";
 
 // ─── Disk-backed completed-unit helpers ───────────────────────────────────────
@@ -1026,7 +1026,11 @@ async function executeDispatchMiddlewares(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
 ): Promise<DispatchContext> {
-  const middlewares = composeDispatchMiddlewares();
+  // Load preferences and compose middlewares with preferences, falling back to defaults if no config
+  const prefs = loadEffectiveGSDPreferences();
+  const middlewares = prefs
+    ? composeDispatchMiddlewaresWithPreferences(prefs.preferences)
+    : composeDispatchMiddlewares();
 
   // Create initial context
   const dispatchContext: DispatchContext = {

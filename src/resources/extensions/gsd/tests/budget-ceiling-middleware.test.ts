@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { PipelineStage } from "../middleware/types.js";
+
 // Test counters
 let passed = 0;
 let failed = 0;
@@ -314,29 +316,29 @@ console.log("\n=== should include budget info in metadata when pausing ===");
   });
 }
 
-// Test 6: should use priority 95 by default
-console.log("\n=== should use priority 95 by default ===");
+// Test 6: should use stage "pre-dispatch" by default
+console.log("\n=== should use stage pre-dispatch by default ===");
 {
   pendingTests++;
   import("../middleware/budget-ceiling.js").then(({ createBudgetCeilingMiddleware }) => {
     const middleware = createBudgetCeilingMiddleware();
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 95, "default priority should be 95");
+    assertEq(metadata.stage, "pre-dispatch" as PipelineStage, "default stage should be pre-dispatch");
     assertEq(metadata.name, "budget-ceiling", "default name should be 'budget-ceiling'");
     pendingTests--;
     if (pendingTests === 0) printSummary();
   });
 }
 
-// Test 7: should allow custom priority via config
-console.log("\n=== should allow custom priority via config ===");
+// Test 7: should allow custom stage via config
+console.log("\n=== should allow custom stage via config ===");
 {
   pendingTests++;
   import("../middleware/budget-ceiling.js").then(({ createBudgetCeilingMiddleware }) => {
-    const config: any = { priority: 80, name: "custom-budget-ceiling" };
+    const config: any = { stage: "dispatch" as PipelineStage, name: "custom-budget-ceiling" };
     const middleware = createBudgetCeilingMiddleware(config);
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 80, "custom priority should be 80");
+    assertEq(metadata.stage, "dispatch" as PipelineStage, "custom stage should be dispatch");
     assertEq(metadata.name, "custom-budget-ceiling", "custom name should be used");
     pendingTests--;
     if (pendingTests === 0) printSummary();

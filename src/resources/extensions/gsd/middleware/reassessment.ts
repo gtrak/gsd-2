@@ -1,22 +1,23 @@
 // GSD Extension — Reassessment Middleware
 // Dispatches reassess-roadmap after slice completion for adaptive replanning.
-// This middleware runs at Priority 80, checking if the last completed slice needs reassessment.
+// This middleware runs in the "dispatch" stage.
 
 import type {
   DispatchContext,
   DispatchDecision,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 import { checkNeedsReassessment, buildReassessRoadmapPrompt } from "../auto.js";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for reassessment middleware.
- * Priority 80 — runs after UAT dispatch (85), ensuring UAT completes before reassessment.
+ * Default pipeline stage for reassessment middleware.
+ * Runs in the "dispatch" stage for core dispatch logic.
  */
-const DEFAULT_PRIORITY = 80;
+const DEFAULT_STAGE: PipelineStage = "dispatch";
 
 // ─── Middleware Factory ────────────────────────────────────────────────────
 
@@ -28,20 +29,20 @@ const DEFAULT_PRIORITY = 80;
  * If no reassessment is needed, it passes through to the next middleware.
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 80)
+ * @param config.stage - Pipeline stage of the middleware (default: "dispatch")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "reassessment")
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
- * const middleware = createReassessmentMiddleware({ priority: 80 });
+ * const middleware = createReassessmentMiddleware({ stage: "dispatch" });
  * ```
  */
 export function createReassessmentMiddleware(
   config?: Partial<MiddlewareConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "reassessment";
 
@@ -100,9 +101,9 @@ export function createReassessmentMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

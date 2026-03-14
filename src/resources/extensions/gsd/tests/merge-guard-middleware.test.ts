@@ -452,29 +452,29 @@ console.log("\n=== should set error decision on merge failure ===");
   });
 }
 
-// Test 7: should use priority 90 by default
-console.log("\n=== should use priority 90 by default ===");
+// Test 7: should use stage 'pre-dispatch' by default
+console.log("\n=== should use stage 'pre-dispatch' by default ===");
 {
   pendingTests++;
   import("../middleware/merge-guard.js").then(({ createMergeGuardMiddleware }) => {
     const middleware = createMergeGuardMiddleware();
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 90, "default priority should be 90");
+    assertEq(metadata.stage, "pre-dispatch", "default stage should be 'pre-dispatch'");
     assertEq(metadata.name, "merge-guard", "default name should be 'merge-guard'");
     pendingTests--;
     if (pendingTests === 0) printSummary();
   });
 }
 
-// Test 8: should allow custom priority via config
-console.log("\n=== should allow custom priority via config ===");
+// Test 8: should allow custom stage via config
+console.log("\n=== should allow custom stage via config ===");
 {
   pendingTests++;
   import("../middleware/merge-guard.js").then(({ createMergeGuardMiddleware }) => {
-    const config: any = { priority: 80, name: "custom-merge-guard" };
+    const config: any = { stage: "dispatch", name: "custom-merge-guard" };
     const middleware = createMergeGuardMiddleware(config);
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 80, "custom priority should be 80");
+    assertEq(metadata.stage, "dispatch", "custom stage should be 'dispatch'");
     assertEq(metadata.name, "custom-merge-guard", "custom name should be used");
     pendingTests--;
     if (pendingTests === 0) printSummary();

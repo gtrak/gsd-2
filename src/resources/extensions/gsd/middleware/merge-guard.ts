@@ -1,13 +1,14 @@
 // GSD Extension — Merge Guard Middleware
 // Handles the general merge guard logic: if we're on a gsd/MID/SID branch and
 // that slice is done (roadmap [x]), merge to main before dispatching the next unit.
-// This middleware runs at Priority 90.
+// This middleware runs in the "pre-dispatch" stage.
 
 import type {
   DispatchContext,
   DispatchDecision,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 import {
   getCurrentBranch,
@@ -23,10 +24,10 @@ import { deriveState } from "../state.js";
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for merge guard middleware.
- * Priority 90 — runs after budget ceiling (95) but before other dispatch middleware.
+ * Default pipeline stage for merge guard middleware.
+ * Runs in the "pre-dispatch" stage for guard checks.
  */
-const DEFAULT_PRIORITY = 90;
+const DEFAULT_STAGE: PipelineStage = "pre-dispatch";
 
 /**
  * Decision object used to signal that auto-mode should be stopped
@@ -58,20 +59,20 @@ export const MERGE_ERROR_DECISION: DispatchDecision = {
  * - complete-milestone runs on a slice branch (last slice bypass)
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 90)
+ * @param config.stage - Pipeline stage of the middleware (default: "pre-dispatch")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "merge-guard")
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
- * const middleware = createMergeGuardMiddleware({ priority: 90 });
+ * const middleware = createMergeGuardMiddleware({ stage: "pre-dispatch" });
  * ```
  */
 export function createMergeGuardMiddleware(
   config?: Partial<MiddlewareConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "merge-guard";
 
@@ -213,10 +214,10 @@ export function createMergeGuardMiddleware(
 
   // Attach metadata for identification
   (middleware as DispatchMiddleware & {
-    __metadata?: { name: string; priority: number };
+    __metadata?: { name: string; stage: PipelineStage };
   }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

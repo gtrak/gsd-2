@@ -1,11 +1,12 @@
 // GSD Extension — Metrics Middleware
 // Tracks timing and performance metrics before and after dispatch.
-// This middleware runs near the end of the chain (Priority 65).
+// This middleware runs in the "post-dispatch" stage.
 
 import type {
   DispatchContext,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -37,10 +38,10 @@ export interface MetricsExtensionData {
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for metrics middleware.
- * Priority 65 to ensure it runs after observability (60) but before any custom middlewares.
+ * Default pipeline stage for metrics middleware.
+ * Runs in the "post-dispatch" stage for after-effects tracking.
  */
-const DEFAULT_PRIORITY = 65;
+const DEFAULT_STAGE: PipelineStage = "post-dispatch";
 
 // ─── Middleware Factory ────────────────────────────────────────────────────
 
@@ -53,20 +54,20 @@ const DEFAULT_PRIORITY = 65;
  * If a decision is made, it also attaches the metrics to the decision metadata.
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 65)
+ * @param config.stage - Pipeline stage of the middleware (default: "post-dispatch")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "metrics")
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
- * const middleware = createMetricsMiddleware({ priority: 65 });
+ * const middleware = createMetricsMiddleware({ stage: "post-dispatch" });
  * ```
  */
 export function createMetricsMiddleware(
   config?: Partial<MiddlewareConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "metrics";
 
@@ -130,9 +131,9 @@ export function createMetricsMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

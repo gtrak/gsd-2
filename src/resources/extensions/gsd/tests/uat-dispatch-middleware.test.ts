@@ -317,29 +317,29 @@ console.log("\n=== should build correct unitId from mid and sliceId ===");
   });
 }
 
-// Test 5: should use priority 85 by default
-console.log("\n=== should use priority 85 by default ===");
+// Test 5: should use stage 'dispatch' by default
+console.log("\n=== should use stage 'dispatch' by default ===");
 {
   pendingTests++;
   import("../middleware/uat-dispatch.js").then(({ createUatDispatchMiddleware }) => {
     const middleware = createUatDispatchMiddleware();
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 85, "default priority should be 85");
+    assertEq(metadata.stage, "dispatch", "default stage should be 'dispatch'");
     assertEq(metadata.name, "uat-dispatch", "default name should be 'uat-dispatch'");
     pendingTests--;
     if (pendingTests === 0) printSummary();
   });
 }
 
-// Test 6: should allow custom priority via config
-console.log("\n=== should allow custom priority via config ===");
+// Test 6: should allow custom stage via config
+console.log("\n=== should allow custom stage via config ===");
 {
   pendingTests++;
   import("../middleware/uat-dispatch.js").then(({ createUatDispatchMiddleware }) => {
-    const config: any = { priority: 70, name: "custom-uat-dispatch" };
+    const config: any = { stage: "pre-dispatch", name: "custom-uat-dispatch" };
     const middleware = createUatDispatchMiddleware(config);
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 70, "custom priority should be 70");
+    assertEq(metadata.stage, "pre-dispatch", "custom stage should be 'pre-dispatch'");
     assertEq(metadata.name, "custom-uat-dispatch", "custom name should be used");
     pendingTests--;
     if (pendingTests === 0) printSummary();

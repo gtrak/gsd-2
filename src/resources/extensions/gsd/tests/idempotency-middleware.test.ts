@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createIdempotencyMiddleware, SKIP_DECISION } from "../middleware/idempotency.js";
-import type { DispatchContext, MiddlewareConfig } from "../middleware/types.js";
+import type { DispatchContext, MiddlewareConfig, PipelineStage } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
 
 // Test counters
@@ -240,25 +240,25 @@ console.log("\n=== should pass through when unit is not completed ===");
   cleanup();
 }
 
-// Test 5: should use priority 100 by default
-console.log("\n=== should use priority 100 by default ===");
+// Test 5: should use stage "pre-validation" by default
+console.log("\n=== should use stage pre-validation by default ===");
 {
   const middleware = createIdempotencyMiddleware();
   const metadata = (middleware as any).__metadata;
-  assertEq(metadata.priority, 100, "default priority should be 100");
+  assertEq(metadata.stage, "pre-validation" as PipelineStage, "default stage should be pre-validation");
   assertEq(metadata.name, "idempotency", "default name should be 'idempotency'");
 }
 
-// Test 6: should allow custom priority via config
-console.log("\n=== should allow custom priority via config ===");
+// Test 6: should allow custom stage via config
+console.log("\n=== should allow custom stage via config ===");
 {
   const config: Partial<MiddlewareConfig> = {
-    priority: 75,
+    stage: "dispatch" as PipelineStage,
     name: "custom-idempotency",
   };
   const middleware = createIdempotencyMiddleware(config);
   const metadata = (middleware as any).__metadata;
-  assertEq(metadata.priority, 75, "custom priority should be 75");
+  assertEq(metadata.stage, "dispatch" as PipelineStage, "custom stage should be dispatch");
   assertEq(metadata.name, "custom-idempotency", "custom name should be used");
 }
 

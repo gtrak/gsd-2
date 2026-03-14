@@ -1,12 +1,13 @@
 // GSD Extension — Phase Dispatch Middleware
 // Handles dispatching units based on the current phase in the state.
-// This middleware runs at Priority 75, after idempotency and budget checks.
+// This middleware runs in the "dispatch" stage.
 
 import type {
   DispatchContext,
   DispatchDecision,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 import {
   buildCompleteSlicePrompt,
@@ -27,10 +28,10 @@ import { loadFile } from "../files.js";
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for phase dispatch middleware.
- * Priority 75 — runs after idempotency (100) and budget ceiling (95) checks.
+ * Default pipeline stage for phase dispatch middleware.
+ * Runs in the "dispatch" stage for core dispatch logic.
  */
-const DEFAULT_PRIORITY = 75;
+const DEFAULT_STAGE: PipelineStage = "dispatch";
 
 // ─── Middleware Factory ────────────────────────────────────────────────────
 
@@ -50,20 +51,20 @@ const DEFAULT_PRIORITY = 75;
  * - "completing-milestone" → "complete-milestone"
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 75)
+ * @param config.stage - Pipeline stage of the middleware (default: "dispatch")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "phase-dispatch")
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
- * const middleware = createPhaseDispatchMiddleware({ priority: 75 });
+ * const middleware = createPhaseDispatchMiddleware({ stage: "dispatch" });
  * ```
  */
 export function createPhaseDispatchMiddleware(
   config?: Partial<MiddlewareConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "phase-dispatch";
 
@@ -120,9 +121,9 @@ export function createPhaseDispatchMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

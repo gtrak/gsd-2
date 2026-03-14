@@ -1,12 +1,13 @@
 // GSD Extension — Budget Ceiling Middleware
 // Checks if the project budget ceiling has been exceeded and pauses auto-mode if so.
-// This middleware runs at Priority 95, after idempotency checks but before dispatch.
+// This middleware runs in the "pre-dispatch" stage.
 
 import type {
   DispatchContext,
   DispatchDecision,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 import { getLedger, getProjectTotals, formatCost } from "../metrics.js";
 import { loadEffectiveGSDPreferences } from "../preferences.js";
@@ -14,10 +15,10 @@ import { loadEffectiveGSDPreferences } from "../preferences.js";
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for budget ceiling middleware.
- * Priority 95 — runs after idempotency (100) but before other dispatch middleware.
+ * Default pipeline stage for budget ceiling middleware.
+ * Runs in the "pre-dispatch" stage for guard checks.
  */
-const DEFAULT_PRIORITY = 95;
+const DEFAULT_STAGE: PipelineStage = "pre-dispatch";
 
 /**
  * Decision object used to signal that auto-mode should be paused
@@ -42,20 +43,20 @@ export const PAUSE_DECISION: DispatchDecision = {
  * auto-mode to prevent further spending.
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 95)
+ * @param config.stage - Pipeline stage of the middleware (default: "pre-dispatch")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "budget-ceiling")
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
- * const middleware = createBudgetCeilingMiddleware({ priority: 95 });
+ * const middleware = createBudgetCeilingMiddleware({ stage: "pre-dispatch" });
  * ```
  */
 export function createBudgetCeilingMiddleware(
   config?: Partial<MiddlewareConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "budget-ceiling";
 
@@ -110,9 +111,9 @@ export function createBudgetCeilingMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

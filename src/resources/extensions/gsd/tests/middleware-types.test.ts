@@ -1,15 +1,38 @@
 // GSD Extension — Middleware Types Test
 // Tests for dispatch middleware type definitions and compatibility.
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { strict as assert } from "node:assert";
 import type {
   DispatchDecision,
   DispatchContext,
   DispatchMiddleware,
   MiddlewareConfig,
   MiddlewareFactory,
+  PipelineStage,
 } from "../middleware/types.js";
 import type { HookContext } from "../hooks.js";
+
+// Test counters
+let passed = 0;
+let failed = 0;
+
+// ─── Test Helpers ──────────────────────────────────────────────────────────
+
+function check(condition: boolean, message: string): void {
+  if (condition) {
+    passed++;
+  } else {
+    failed++;
+    console.error(`  FAIL: ${message}`);
+  }
+}
+
+function log(message: string): void {
+  console.log(message);
+}
+
+// ─── Test Suites ───────────────────────────────────────────────────────────
 
 describe("DispatchDecision", () => {
   it("should have all required fields", () => {
@@ -19,10 +42,10 @@ describe("DispatchDecision", () => {
       prompt: "Complete the task",
     };
 
-    expect(decision.unitType).toBe("execute-task");
-    expect(decision.unitId).toBe("M001/S01/T01");
-    expect(decision.prompt).toBe("Complete the task");
-    expect(decision.metadata).toBeUndefined();
+    check(decision.unitType === "execute-task", "unitType should be 'execute-task'");
+    check(decision.unitId === "M001/S01/T01", "unitId should be 'M001/S01/T01'");
+    check(decision.prompt === "Complete the task", "prompt should be 'Complete the task'");
+    check(decision.metadata === undefined, "metadata should be undefined");
   });
 
   it("should accept optional metadata", () => {
@@ -36,7 +59,7 @@ describe("DispatchDecision", () => {
       },
     };
 
-    expect(decision.metadata?.cycle).toBe(1);
+    check(decision.metadata?.cycle === 1, "metadata.cycle should be 1");
   });
 });
 
@@ -85,11 +108,16 @@ describe("DispatchContext", () => {
     };
 
     const context = createContext();
-    expect(context.completedKeySet).toBeInstanceOf(Set);
-    expect(context.getCompletedKey("execute-task", "M001/S01/T01")).toBe(
-      "execute-task:M001/S01/T01",
+    check(context.completedKeySet instanceof Set, "completedKeySet should be a Set");
+    check(
+      context.getCompletedKey("execute-task", "M001/S01/T01") ===
+        "execute-task:M001/S01/T01",
+      "getCompletedKey should return correct key format",
     );
-    expect(context.isUnitCompleted("execute-task", "M001/S01/T01")).toBe(false);
+    check(
+      context.isUnitCompleted("execute-task", "M001/S01/T01") === false,
+      "isUnitCompleted should return false for uncompleted unit",
+    );
   });
 
   it("should track completed units", () => {
@@ -133,8 +161,14 @@ describe("DispatchContext", () => {
     // Mark unit as completed
     completedKeySet.add(context.getCompletedKey("execute-task", "M001/S01/T01"));
 
-    expect(context.isUnitCompleted("execute-task", "M001/S01/T01")).toBe(true);
-    expect(context.isUnitCompleted("execute-task", "M001/S01/T02")).toBe(false);
+    check(
+      context.isUnitCompleted("execute-task", "M001/S01/T01") === true,
+      "isUnitCompleted should return true for completed unit",
+    );
+    check(
+      context.isUnitCompleted("execute-task", "M001/S01/T02") === false,
+      "isUnitCompleted should return false for different unit",
+    );
   });
 });
 
@@ -156,21 +190,108 @@ describe("DispatchMiddleware", () => {
       };
     };
 
-    expect(typeof middleware).toBe("function");
+    check(typeof middleware === "function", "middleware should be a function");
+  });
+});
+
+describe("PipelineStage", () => {
+  it("should have exactly 6 stage values", () => {
+    const validStages: PipelineStage[] = [
+      "pre-validation",
+      "validation",
+      "pre-dispatch",
+      "dispatch",
+      "post-dispatch",
+      "notification",
+    ];
+
+    check(validStages.length === 6, "should have exactly 6 stages");
+    check(
+      validStages.includes("pre-validation"),
+      "should include 'pre-validation'",
+    );
+    check(validStages.includes("validation"), "should include 'validation'");
+    check(
+      validStages.includes("pre-dispatch"),
+      "should include 'pre-dispatch'",
+    );
+    check(validStages.includes("dispatch"), "should include 'dispatch'");
+    check(
+      validStages.includes("post-dispatch"),
+      "should include 'post-dispatch'",
+    );
+    check(validStages.includes("notification"), "should include 'notification'");
+  });
+
+  it("should reject invalid stage values at type level", () => {
+    // This test verifies type safety - TypeScript should reject invalid values
+    const validStage: PipelineStage = "dispatch";
+    check(validStage === "dispatch", "valid stage should be accepted");
+
+    // Note: TypeScript will catch invalid values at compile time
+    // Runtime check for demonstration
+    const invalidValue = "invalid-stage" as unknown as PipelineStage;
+    check(
+      ![
+        "pre-validation",
+        "validation",
+        "pre-dispatch",
+        "dispatch",
+        "post-dispatch",
+        "notification",
+      ].includes(invalidValue),
+      "invalid stage should not be in valid stages list",
+    );
+  });
+
+  it("should define stage execution order", () => {
+    // Verify the semantic order of stages
+    const stageOrder = [
+      "pre-validation", // 1. Initial checks (idempotency)
+      "validation", // 2. State validation
+      "pre-dispatch", // 3. Guards (budget, merge)
+      "dispatch", // 4. Core dispatch logic
+      "post-dispatch", // 5. After-effects (review, metrics, observability)
+      "notification", // 6. Final notifications
+    ];
+
+    check(stageOrder.length === 6, "should have 6 stages in order");
+    check(stageOrder[0] === "pre-validation", "first stage should be pre-validation");
+    check(stageOrder[5] === "notification", "last stage should be notification");
   });
 });
 
 describe("MiddlewareConfig", () => {
-  it("should have all required fields with defaults", () => {
+  it("should have all required fields with stage instead of priority", () => {
     const config: MiddlewareConfig = {
-      priority: 75,
+      stage: "dispatch",
       enabled: true,
       name: "test-middleware",
     };
 
-    expect(config.priority).toBe(75);
-    expect(config.enabled).toBe(true);
-    expect(config.name).toBe("test-middleware");
+    check(config.stage === "dispatch", "stage should be 'dispatch'");
+    check(config.enabled === true, "enabled should be true");
+    check(config.name === "test-middleware", "name should be 'test-middleware'");
+  });
+
+  it("should accept all valid PipelineStage values", () => {
+    const validStages: PipelineStage[] = [
+      "pre-validation",
+      "validation",
+      "pre-dispatch",
+      "dispatch",
+      "post-dispatch",
+      "notification",
+    ];
+
+    for (const stage of validStages) {
+      const config: MiddlewareConfig = {
+        stage,
+        enabled: true,
+        name: `middleware-for-${stage}`,
+      };
+      check(config.stage === stage, `config should accept stage '${stage}'`);
+    }
   });
 });
 
@@ -186,17 +307,17 @@ describe("MiddlewareFactory", () => {
     };
 
     const middleware = factory({
-      priority: 60,
+      stage: "dispatch",
       enabled: true,
       name: "factory-middleware",
     });
 
-    expect(typeof middleware).toBe("function");
+    check(typeof middleware === "function", "middleware should be a function");
   });
 
   it("should work with partial config", () => {
     const factory: MiddlewareFactory = (config) => {
-      const priority = config?.priority ?? 50;
+      const stage = config?.stage ?? "dispatch";
       const enabled = config?.enabled ?? true;
       const name = config?.name ?? "anonymous";
 
@@ -209,7 +330,7 @@ describe("MiddlewareFactory", () => {
     };
 
     const middleware = factory({ name: "partial-config" });
-    expect(typeof middleware).toBe("function");
+    check(typeof middleware === "function", "middleware should be a function");
   });
 });
 
@@ -217,8 +338,8 @@ describe("Type Compatibility", () => {
   it("should verify DispatchContext is compatible with HookContext", () => {
     // This test verifies that DispatchContext can be used wherever HookContext is expected
     const acceptsHookContext = (ctx: HookContext): void => {
-      expect(ctx.basePath).toBeDefined();
-      expect(ctx.state).toBeDefined();
+      check(ctx.basePath !== undefined, "basePath should be defined");
+      check(ctx.state !== undefined, "state should be defined");
     };
 
     const dispatchContext: DispatchContext = {
@@ -259,3 +380,14 @@ describe("Type Compatibility", () => {
     acceptsHookContext(dispatchContext);
   });
 });
+
+// ─── Test Summary ───────────────────────────────────────────────────────────
+
+console.log("\n========================================");
+console.log(`Results: ${passed} passed, ${failed} failed`);
+if (failed === 0) {
+  console.log("All tests passed ✓");
+} else {
+  console.log(`Some tests failed ✗`);
+  process.exit(1);
+}

@@ -5,11 +5,12 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { composeDispatchMiddlewares, composeDispatchMiddlewaresWithConfig } from "../middleware/index.js";
+import { composeDispatchMiddlewares } from "../middleware/index.js";
 import type {
   DispatchContext,
   DispatchMiddleware,
   MiddlewareConfig,
+  PipelineStage,
 } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
 
@@ -142,16 +143,26 @@ function createMockDispatchContext(
  */
 function createTestMiddleware(
   name: string,
-  priority: number,
+  stage: PipelineStage,
   handler: (context: DispatchContext, next: () => Promise<void>) => Promise<void>,
 ): DispatchMiddleware {
   const middleware: DispatchMiddleware = handler;
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
   return middleware;
 }
+
+// Stage order for sorting
+const STAGE_ORDER: Record<PipelineStage, number> = {
+  "pre-validation": 0,
+  "validation": 1,
+  "pre-dispatch": 2,
+  "dispatch": 3,
+  "post-dispatch": 4,
+  "notification": 5,
+};
 
 /**
  * Runs a middleware chain and returns the final context
@@ -160,11 +171,11 @@ async function runMiddlewareChain(
   context: DispatchContext,
   middlewares: DispatchMiddleware[],
 ): Promise<DispatchContext> {
-  // Sort middlewares by priority (highest first)
+  // Sort middlewares by stage (earlier stages first)
   const sortedMiddlewares = [...middlewares].sort((a, b) => {
-    const priorityA = (a as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    const priorityB = (b as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    return priorityB - priorityA;
+    const stageA = (a as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
+    const stageB = (b as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
+    return STAGE_ORDER[stageA] - STAGE_ORDER[stageB];
   });
 
   let index = 0;
@@ -194,24 +205,24 @@ async function runMiddlewareChain(
 
 console.log("\n=== Middleware Integration Tests ===\n");
 
-// Test 1: middleware chain executes in priority order
-console.log("=== Test: middleware chain executes in priority order ===");
+// Test 1: middleware chain executes in stage order
+console.log("=== Test: middleware chain executes in stage order ===");
 {
   const { dir, cleanup } = createTestDir();
 
   const executionOrder: string[] = [];
 
-  const middleware1 = createTestMiddleware("middleware-low", 30, async (context, next) => {
-    executionOrder.push("low");
+  const middleware1 = createTestMiddleware("middleware-late", "notification", async (context, next) => {
+    executionOrder.push("late");
     await next();
   });
 
-  const middleware2 = createTestMiddleware("middleware-high", 90, async (context, next) => {
-    executionOrder.push("high");
+  const middleware2 = createTestMiddleware("middleware-early", "pre-validation", async (context, next) => {
+    executionOrder.push("early");
     await next();
   });
 
-  const middleware3 = createTestMiddleware("middleware-mid", 60, async (context, next) => {
+  const middleware3 = createTestMiddleware("middleware-mid", "dispatch", async (context, next) => {
     executionOrder.push("mid");
     await next();
   });
@@ -220,9 +231,9 @@ console.log("=== Test: middleware chain executes in priority order ===");
 
   await runMiddlewareChain(context, [middleware1, middleware2, middleware3]);
 
-  assertEq(executionOrder[0], "high", "high priority should execute first");
-  assertEq(executionOrder[1], "mid", "mid priority should execute second");
-  assertEq(executionOrder[2], "low", "low priority should execute last");
+  assertEq(executionOrder[0], "early", "early stage should execute first");
+  assertEq(executionOrder[1], "mid", "mid stage should execute second");
+  assertEq(executionOrder[2], "late", "late stage should execute last");
 
   cleanup();
 }
@@ -275,9 +286,9 @@ console.log("\n=== Test: budget ceiling middleware pauses when exceeded ===");
   const { createBudgetCeilingMiddleware, PAUSE_DECISION } = await import("../middleware/budget-ceiling.js");
 
   const middleware = createBudgetCeilingMiddleware();
-  const metadata = (middleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const metadata = (middleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(metadata?.priority, 95, "budget ceiling middleware should have priority 95");
+  assertEq(metadata?.stage, "pre-dispatch", "budget ceiling middleware should have stage pre-dispatch");
   assertEq(metadata?.name, "budget-ceiling", "budget ceiling middleware should have correct name");
   assertEq(PAUSE_DECISION.unitType, "pause", "PAUSE_DECISION should have unitType 'pause'");
 
@@ -313,9 +324,9 @@ Test vision.
   const { createMergeGuardMiddleware } = await import("../middleware/merge-guard.js");
 
   const middleware = createMergeGuardMiddleware();
-  const metadata = (middleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const metadata = (middleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(metadata?.priority, 90, "merge guard middleware should have priority 90");
+  assertEq(metadata?.stage, "pre-dispatch", "merge guard middleware should have stage pre-dispatch");
   assertEq(metadata?.name, "merge-guard", "merge guard middleware should have correct name");
 
   cleanup();
@@ -337,9 +348,9 @@ console.log("\n=== Test: phase dispatch middleware dispatches correct unit ===")
   const { createPhaseDispatchMiddleware } = await import("../middleware/phase-dispatch.js");
 
   const middleware = createPhaseDispatchMiddleware();
-  const metadata = (middleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const metadata = (middleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(metadata?.priority, 75, "phase dispatch middleware should have priority 75");
+  assertEq(metadata?.stage, "dispatch", "phase dispatch middleware should have stage dispatch");
   assertEq(metadata?.name, "phase-dispatch", "phase dispatch middleware should have correct name");
 
   cleanup();
@@ -364,9 +375,9 @@ console.log("\n=== Test: code review middleware dispatches review before execute
   const { createCodeReviewMiddleware } = await import("../middleware/code-review.js");
 
   const middleware = createCodeReviewMiddleware();
-  const metadata = (middleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const metadata = (middleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(metadata?.priority, 70, "code review middleware should have priority 70");
+  assertEq(metadata?.stage, "dispatch", "code review middleware should have stage dispatch");
   assertEq(metadata?.name, "code-review", "code review middleware should have correct name");
 
   cleanup();
@@ -377,7 +388,7 @@ console.log("\n=== Test: multiple middlewares can modify working state ===");
 {
   const { dir, cleanup } = createTestDir();
 
-  const middleware1 = createTestMiddleware("middleware-modify-1", 80, async (context, next) => {
+  const middleware1 = createTestMiddleware("middleware-modify-1", "dispatch", async (context, next) => {
     if (!context.workingState.extensions) {
       context.workingState.extensions = {};
     }
@@ -385,7 +396,7 @@ console.log("\n=== Test: multiple middlewares can modify working state ===");
     await next();
   });
 
-  const middleware2 = createTestMiddleware("middleware-modify-2", 60, async (context, next) => {
+  const middleware2 = createTestMiddleware("middleware-modify-2", "post-dispatch", async (context, next) => {
     if (!context.workingState.extensions) {
       context.workingState.extensions = {};
     }
@@ -418,9 +429,9 @@ console.log("\n=== Test: observability middleware always runs last ===");
   const { createObservabilityMiddleware } = await import("../middleware/observability.js");
 
   const middleware = createObservabilityMiddleware();
-  const metadata = (middleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const metadata = (middleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(metadata?.priority, 60, "observability middleware should have priority 60");
+  assertEq(metadata?.stage, "post-dispatch", "observability middleware should have stage post-dispatch");
   assertEq(metadata?.name, "observability", "observability middleware should have correct name");
 
   cleanup();
@@ -433,17 +444,17 @@ console.log("\n=== Test: middleware chain handles errors gracefully ===");
 
   const executionOrder: string[] = [];
 
-  const middleware1 = createTestMiddleware("middleware-1", 90, async (context, next) => {
+  const middleware1 = createTestMiddleware("middleware-1", "pre-dispatch", async (context, next) => {
     executionOrder.push("middleware-1");
     await next();
   });
 
-  const middleware2 = createTestMiddleware("middleware-error", 70, async (context, next) => {
+  const middleware2 = createTestMiddleware("middleware-error", "dispatch", async (context, next) => {
     executionOrder.push("middleware-error");
     throw new Error("Test error");
   });
 
-  const middleware3 = createTestMiddleware("middleware-3", 50, async (context, next) => {
+  const middleware3 = createTestMiddleware("middleware-3", "post-dispatch", async (context, next) => {
     executionOrder.push("middleware-3");
     context.decision = {
       unitType: "execute-task",
@@ -472,22 +483,22 @@ console.log("\n=== Test: composeDispatchMiddlewares returns correct order ===");
   // Verify we have all 11 middlewares
   assertEq(middlewares.length, 11, "should have 11 middlewares");
 
-  // Verify order by priority (highest first)
-  const priorities = middlewares.map(
-    (m) => (m as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority,
+  // Verify order by stage (earlier stages first)
+  const stages = middlewares.map(
+    (m) => (m as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage,
   );
 
-  assertEq(priorities[0], 100, "first middleware should have priority 100 (idempotency)");
-  assertEq(priorities[1], 98, "second middleware should have priority 98 (validation)");
-  assertEq(priorities[2], 95, "third middleware should have priority 95 (budget-ceiling)");
-  assertEq(priorities[3], 90, "fourth middleware should have priority 90 (merge-guard)");
-  assertEq(priorities[4], 85, "fifth middleware should have priority 85 (uat-dispatch)");
-  assertEq(priorities[5], 80, "sixth middleware should have priority 80 (reassessment)");
-  assertEq(priorities[6], 75, "seventh middleware should have priority 75 (phase-dispatch)");
-  assertEq(priorities[7], 70, "eighth middleware should have priority 70 (code-review)");
-  assertEq(priorities[8], 65, "ninth middleware should have priority 65 (metrics)");
-  assertEq(priorities[9], 60, "tenth middleware should have priority 60 (observability)");
-  assertEq(priorities[10], 55, "eleventh middleware should have priority 55 (notifications)");
+  assertEq(stages[0], "pre-validation", "first middleware should have stage pre-validation (idempotency)");
+  assertEq(stages[1], "validation", "second middleware should have stage validation");
+  assertEq(stages[2], "pre-dispatch", "third middleware should have stage pre-dispatch (budget-ceiling)");
+  assertEq(stages[3], "pre-dispatch", "fourth middleware should have stage pre-dispatch (merge-guard)");
+  assertEq(stages[4], "dispatch", "fifth middleware should have stage dispatch (uat-dispatch)");
+  assertEq(stages[5], "dispatch", "sixth middleware should have stage dispatch (reassessment)");
+  assertEq(stages[6], "dispatch", "seventh middleware should have stage dispatch (phase-dispatch)");
+  assertEq(stages[7], "dispatch", "eighth middleware should have stage dispatch (code-review)");
+  assertEq(stages[8], "post-dispatch", "ninth middleware should have stage post-dispatch (metrics)");
+  assertEq(stages[9], "post-dispatch", "tenth middleware should have stage post-dispatch (observability)");
+  assertEq(stages[10], "notification", "eleventh middleware should have stage notification");
 
   // Verify names
   const names = middlewares.map(
@@ -505,39 +516,6 @@ console.log("\n=== Test: composeDispatchMiddlewares returns correct order ===");
   assertEq(names[8], "metrics", "ninth middleware should be metrics");
   assertEq(names[9], "observability", "tenth middleware should be observability");
   assertEq(names[10], "notifications", "eleventh middleware should be notifications");
-}
-
-// Test 11: composeDispatchMiddlewaresWithConfig filters disabled middlewares
-console.log("\n=== Test: composeDispatchMiddlewaresWithConfig filters disabled middlewares ===");
-{
-  const middlewares = composeDispatchMiddlewaresWithConfig({
-    idempotency: { enabled: true },
-    validation: { enabled: true },
-    budgetCeiling: { enabled: false },
-    mergeGuard: { enabled: true },
-    uatDispatch: { enabled: false },
-    reassessment: { enabled: true },
-    phaseDispatch: { enabled: false },
-    codeReview: { enabled: true },
-    metrics: { enabled: true },
-    observability: { enabled: true },
-  });
-
-  // Should have 8 middlewares (idempotency, validation, merge-guard, reassessment, code-review, metrics, observability, notifications)
-  assertEq(middlewares.length, 8, "should have 8 enabled middlewares");
-
-  // Verify order by priority
-  const priorities = middlewares.map(
-    (m) => (m as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority,
-  );
-
-  assertEq(priorities[0], 100, "first middleware should have priority 100 (idempotency)");
-  assertEq(priorities[1], 98, "second middleware should have priority 98 (validation)");
-  assertEq(priorities[2], 90, "third middleware should have priority 90 (merge-guard)");
-  assertEq(priorities[3], 80, "fourth middleware should have priority 80 (reassessment)");
-  assertEq(priorities[4], 70, "fifth middleware should have priority 70 (code-review)");
-  assertEq(priorities[5], 65, "sixth middleware should have priority 65 (metrics)");
-  assertEq(priorities[6], 60, "seventh middleware should have priority 60 (observability)");
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

@@ -8,7 +8,7 @@ import {
   composeDispatchMiddlewares,
   createIdempotencyMiddleware,
 } from "../middleware/index.js";
-import type { DispatchMiddleware, DispatchContext, GSDMiddleware } from "../middleware/types.js";
+import type { DispatchMiddleware, DispatchContext, GSDMiddleware, PipelineStage } from "../middleware/types.js";
 
 // ─── Test Counters ──────────────────────────────────────────────────────────
 
@@ -103,15 +103,15 @@ function createMockDispatchContext(): DispatchContext {
  */
 function createTestMiddleware(
   name: string,
-  priority: number,
+  stage: PipelineStage,
   enabled: boolean = true,
 ): DispatchMiddleware {
   const middleware: DispatchMiddleware = async (context, next) => {
     await next();
   };
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
   return middleware;
 }
@@ -125,10 +125,10 @@ console.log("=== Test 1: registerDispatchMiddleware adds middleware to registry 
 {
   clearRegisteredDispatchMiddlewares();
 
-  const middleware = createTestMiddleware("test-middleware", 75);
+  const middleware = createTestMiddleware("test-middleware", "dispatch");
   registerDispatchMiddleware({
     name: "test-middleware",
-    priority: 75,
+    stage: "dispatch",
     enabled: true,
     middleware,
   });
@@ -136,7 +136,7 @@ console.log("=== Test 1: registerDispatchMiddleware adds middleware to registry 
   const registered = getRegisteredDispatchMiddlewares();
   assertEq(registered.length, 1, "should have 1 registered middleware");
   assertEq(registered[0].name, "test-middleware", "middleware name should match");
-  assertEq(registered[0].priority, 75, "middleware priority should match");
+  assertEq(registered[0].stage, "dispatch", "middleware stage should match");
   assertEq(registered[0].enabled, true, "middleware should be enabled");
   assertNotNull(registered[0].middleware, "middleware function should be present");
 }
@@ -146,62 +146,62 @@ console.log("\n=== Test 2: registerDispatchMiddleware deduplicates by name ===")
 {
   clearRegisteredDispatchMiddlewares();
 
-  const middleware1 = createTestMiddleware("dedup-test", 50);
-  const middleware2 = createTestMiddleware("dedup-test", 80);
+  const middleware1 = createTestMiddleware("dedup-test", "pre-dispatch");
+  const middleware2 = createTestMiddleware("dedup-test", "post-dispatch");
 
   registerDispatchMiddleware({
     name: "dedup-test",
-    priority: 50,
+    stage: "pre-dispatch",
     enabled: true,
     middleware: middleware1,
   });
 
-  // Register again with same name but different priority
+  // Register again with same name but different stage
   registerDispatchMiddleware({
     name: "dedup-test",
-    priority: 80,
+    stage: "post-dispatch",
     enabled: true,
     middleware: middleware2,
   });
 
   const registered = getRegisteredDispatchMiddlewares();
   assertEq(registered.length, 1, "should deduplicate by name");
-  assertEq(registered[0].priority, 80, "should use the later registration's priority");
+  assertEq(registered[0].stage, "post-dispatch", "should use the later registration's stage");
   assertEq(registered[0].middleware, middleware2, "should use the later registration's middleware");
 }
 
-// Test 3: getRegisteredDispatchMiddlewares sorts by priority
-console.log("\n=== Test 3: getRegisteredDispatchMiddlewares sorts by priority ===");
+// Test 3: getRegisteredDispatchMiddlewares sorts by stage
+console.log("\n=== Test 3: getRegisteredDispatchMiddlewares sorts by stage ===");
 {
   clearRegisteredDispatchMiddlewares();
 
   registerDispatchMiddleware({
-    name: "low-priority",
-    priority: 10,
+    name: "late-stage",
+    stage: "notification",
     enabled: true,
-    middleware: createTestMiddleware("low-priority", 10),
+    middleware: createTestMiddleware("late-stage", "notification"),
   });
 
   registerDispatchMiddleware({
-    name: "high-priority",
-    priority: 90,
+    name: "early-stage",
+    stage: "pre-validation",
     enabled: true,
-    middleware: createTestMiddleware("high-priority", 90),
+    middleware: createTestMiddleware("early-stage", "pre-validation"),
   });
 
   registerDispatchMiddleware({
-    name: "medium-priority",
-    priority: 50,
+    name: "middle-stage",
+    stage: "dispatch",
     enabled: true,
-    middleware: createTestMiddleware("medium-priority", 50),
+    middleware: createTestMiddleware("middle-stage", "dispatch"),
   });
 
   const registered = getRegisteredDispatchMiddlewares();
 
   assertEq(registered.length, 3, "should have 3 registered middlewares");
-  assertEq(registered[0].name, "high-priority", "first should be high-priority");
-  assertEq(registered[1].name, "medium-priority", "second should be medium-priority");
-  assertEq(registered[2].name, "low-priority", "third should be low-priority");
+  assertEq(registered[0].name, "early-stage", "first should be early-stage (pre-validation)");
+  assertEq(registered[1].name, "middle-stage", "second should be middle-stage (dispatch)");
+  assertEq(registered[2].name, "late-stage", "third should be late-stage (notification)");
 }
 
 // Test 4: composeDispatchMiddlewares includes registered custom middlewares
@@ -212,9 +212,9 @@ console.log("\n=== Test 4: composeDispatchMiddlewares includes registered custom
   // Register a custom middleware
   registerDispatchMiddleware({
     name: "custom-middleware",
-    priority: 85,
+    stage: "dispatch",
     enabled: true,
-    middleware: createTestMiddleware("custom-middleware", 85),
+    middleware: createTestMiddleware("custom-middleware", "dispatch"),
   });
 
   const composed = composeDispatchMiddlewares();
@@ -239,17 +239,17 @@ console.log("\n=== Test 5: disabled middlewares are filtered out ===");
   // Register an enabled middleware
   registerDispatchMiddleware({
     name: "enabled-middleware",
-    priority: 85,
+    stage: "dispatch",
     enabled: true,
-    middleware: createTestMiddleware("enabled-middleware", 85),
+    middleware: createTestMiddleware("enabled-middleware", "dispatch"),
   });
 
   // Register a disabled middleware
   registerDispatchMiddleware({
     name: "disabled-middleware",
-    priority: 75,
+    stage: "dispatch",
     enabled: false,
-    middleware: createTestMiddleware("disabled-middleware", 75),
+    middleware: createTestMiddleware("disabled-middleware", "dispatch"),
   });
 
   const composed = composeDispatchMiddlewares();
@@ -282,50 +282,50 @@ console.log("\n=== Test 6: backward compatibility - existing middleware factorie
   // Test that all middleware factories still work
   const idempotency = createIdempotencyMiddleware();
   const idempotencyMetadata = (
-    idempotency as DispatchMiddleware & { __metadata?: { name: string; priority: number } }
+    idempotency as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }
   ).__metadata;
 
   assertNotNull(idempotencyMetadata, "idempotency middleware should have metadata");
   if (idempotencyMetadata) {
     assertEq(idempotencyMetadata.name, "idempotency", "idempotency middleware name should be correct");
-    assertEq(idempotencyMetadata.priority, 100, "idempotency middleware priority should be 100");
+    assertEq(idempotencyMetadata.stage, "pre-validation", "idempotency middleware stage should be pre-validation");
   }
 
   // Test that composeDispatchMiddlewares returns the expected built-in middlewares
   const composed = composeDispatchMiddlewares();
   assertEq(composed.length, 11, "should have 11 built-in middlewares");
 
-  // Verify expected priorities
-  const priorities = composed.map(
+  // Verify expected stages
+  const stages = composed.map(
     (m) =>
-      (m as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority,
+      (m as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage,
   );
 
-  assertEq(priorities[0], 100, "first middleware should have priority 100 (idempotency)");
-  assertEq(priorities[1], 98, "second middleware should have priority 98 (validation)");
-  assertEq(priorities[2], 95, "third middleware should have priority 95 (budget-ceiling)");
-  assertEq(priorities[3], 90, "fourth middleware should have priority 90 (merge-guard)");
-  assertEq(priorities[4], 85, "fifth middleware should have priority 85 (uat-dispatch)");
-  assertEq(priorities[5], 80, "sixth middleware should have priority 80 (reassessment)");
-  assertEq(priorities[6], 75, "seventh middleware should have priority 75 (phase-dispatch)");
-  assertEq(priorities[7], 70, "eighth middleware should have priority 70 (code-review)");
-  assertEq(priorities[8], 65, "ninth middleware should have priority 65 (metrics)");
-  assertEq(priorities[9], 60, "tenth middleware should have priority 60 (observability)");
-  assertEq(priorities[10], 55, "eleventh middleware should have priority 55 (notifications)");
+  assertEq(stages[0], "pre-validation", "first middleware should have stage pre-validation (idempotency)");
+  assertEq(stages[1], "validation", "second middleware should have stage validation");
+  assertEq(stages[2], "pre-dispatch", "third middleware should have stage pre-dispatch (budget-ceiling)");
+  assertEq(stages[3], "pre-dispatch", "fourth middleware should have stage pre-dispatch (merge-guard)");
+  assertEq(stages[4], "dispatch", "fifth middleware should have stage dispatch (uat-dispatch)");
+  assertEq(stages[5], "dispatch", "sixth middleware should have stage dispatch (reassessment)");
+  assertEq(stages[6], "dispatch", "seventh middleware should have stage dispatch (phase-dispatch)");
+  assertEq(stages[7], "dispatch", "eighth middleware should have stage dispatch (code-review)");
+  assertEq(stages[8], "post-dispatch", "ninth middleware should have stage post-dispatch (metrics)");
+  assertEq(stages[9], "post-dispatch", "tenth middleware should have stage post-dispatch (observability)");
+  assertEq(stages[10], "notification", "eleventh middleware should have stage notification");
 }
 
-// Test 7: registerDispatchMiddleware defaults priority to 50
-console.log("\n=== Test 7: registerDispatchMiddleware defaults priority to 50 ===");
+// Test 7: registerDispatchMiddleware defaults stage to dispatch
+console.log("\n=== Test 7: registerDispatchMiddleware defaults stage to dispatch ===");
 {
   clearRegisteredDispatchMiddlewares();
 
   registerDispatchMiddleware({
-    name: "default-priority",
-    middleware: createTestMiddleware("default-priority", 50),
+    name: "default-stage",
+    middleware: createTestMiddleware("default-stage", "dispatch"),
   });
 
   const registered = getRegisteredDispatchMiddlewares();
-  assertEq(registered[0].priority, 50, "default priority should be 50");
+  assertEq(registered[0].stage, "dispatch", "default stage should be dispatch");
 }
 
 // Test 8: registerDispatchMiddleware defaults enabled to true
@@ -335,7 +335,7 @@ console.log("\n=== Test 8: registerDispatchMiddleware defaults enabled to true =
 
   registerDispatchMiddleware({
     name: "default-enabled",
-    middleware: createTestMiddleware("default-enabled", 50),
+    middleware: createTestMiddleware("default-enabled", "dispatch"),
   });
 
   const registered = getRegisteredDispatchMiddlewares();
@@ -349,9 +349,9 @@ console.log("\n=== Test 9: clearRegisteredDispatchMiddlewares clears the registr
 
   registerDispatchMiddleware({
     name: "to-clear",
-    priority: 75,
+    stage: "dispatch",
     enabled: true,
-    middleware: createTestMiddleware("to-clear", 75),
+    middleware: createTestMiddleware("to-clear", "dispatch"),
   });
 
   assertEq(getRegisteredDispatchMiddlewares().length, 1, "should have 1 middleware");
@@ -361,8 +361,8 @@ console.log("\n=== Test 9: clearRegisteredDispatchMiddlewares clears the registr
   assertEq(getRegisteredDispatchMiddlewares().length, 0, "should have 0 middlewares after clear");
 }
 
-// Test 10: custom middleware executes in correct priority order
-console.log("\n=== Test 10: custom middleware executes in correct priority order ===");
+// Test 10: custom middleware executes in correct stage order
+console.log("\n=== Test 10: custom middleware executes in correct stage order ===");
 {
   clearRegisteredDispatchMiddlewares();
 
@@ -370,15 +370,15 @@ console.log("\n=== Test 10: custom middleware executes in correct priority order
   const customMiddleware: DispatchMiddleware = async (context, next) => {
     await next();
   };
-  (customMiddleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (customMiddleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name: "custom-execution-test",
-    priority: 85,
+    stage: "dispatch",
   };
 
-  // Register a custom middleware with priority 85 (same as uat-dispatch)
+  // Register a custom middleware with stage "dispatch" (same as uat-dispatch)
   registerDispatchMiddleware({
     name: "custom-execution-test",
-    priority: 85,
+    stage: "dispatch",
     enabled: true,
     middleware: customMiddleware,
   });
@@ -407,9 +407,10 @@ console.log("\n=== Test 10: custom middleware executes in correct priority order
   assert(uatIndex >= 0, "uat-dispatch should be in composed list");
   assert(customIndex >= 0, "custom middleware should be in composed list");
   assert(reassessmentIndex >= 0, "reassessment should be in composed list");
-  // Both have priority 85, so they should be adjacent (order depends on array sort stability)
-  assert(Math.abs(customIndex - uatIndex) <= 1, "custom middleware should be adjacent to uat-dispatch (both priority 85)");
-  assert(reassessmentIndex > customIndex, "reassessment should come after custom middleware");
+  // Custom middlewares are appended after built-in middlewares, then sorted by stage
+  // So custom "dispatch" middlewares come after all built-in "dispatch" middlewares
+  assert(customIndex > uatIndex, "custom middleware should come after uat-dispatch");
+  assert(customIndex > reassessmentIndex, "custom middleware should come after reassessment");
 }
 
 // Test 11: GSDMiddleware type can be registered
@@ -424,7 +425,7 @@ console.log("\n=== Test 11: GSDMiddleware type can be registered ===");
 
   registerDispatchMiddleware({
     name: "gsd-middleware-test",
-    priority: 65,
+    stage: "post-dispatch",
     enabled: true,
     middleware: gsdMiddleware,
   });
@@ -432,7 +433,7 @@ console.log("\n=== Test 11: GSDMiddleware type can be registered ===");
   const registered = getRegisteredDispatchMiddlewares();
   assertEq(registered.length, 1, "should have 1 registered middleware");
   assertEq(registered[0].name, "gsd-middleware-test", "GSDMiddleware should be registered");
-  assertEq(registered[0].priority, 65, "GSDMiddleware priority should be preserved");
+  assertEq(registered[0].stage, "post-dispatch", "GSDMiddleware stage should be preserved");
 }
 
 // Test 12: custom middlewares are sorted correctly relative to built-in middlewares
@@ -440,20 +441,20 @@ console.log("\n=== Test 12: custom middlewares are sorted correctly relative to 
 {
   clearRegisteredDispatchMiddlewares();
 
-  // Register custom middleware at priority 88 (should run after UAT middleware at 85)
+  // Register custom middleware at stage "pre-dispatch" (should run with budget-ceiling and merge-guard)
   registerDispatchMiddleware({
-    name: "custom-high-priority",
-    priority: 88,
+    name: "custom-pre-dispatch",
+    stage: "pre-dispatch",
     enabled: true,
     middleware: async (context, next) => {
       await next();
     },
   });
 
-  // Register custom middleware at priority 78 (should run before phase-dispatch at 75)
+  // Register custom middleware at stage "post-dispatch" (should run with code-review, metrics, observability)
   registerDispatchMiddleware({
-    name: "custom-medium-priority",
-    priority: 78,
+    name: "custom-post-dispatch",
+    stage: "post-dispatch",
     enabled: true,
     middleware: async (context, next) => {
       await next();
@@ -463,61 +464,61 @@ console.log("\n=== Test 12: custom middlewares are sorted correctly relative to 
   const composed = composeDispatchMiddlewares();
 
   // Find positions of middlewares
-  const mergeGuardIndex = composed.findIndex(
+  const budgetCeilingIndex = composed.findIndex(
     (m) =>
       (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
-      "merge-guard",
+      "budget-ceiling",
   );
-  const customHighIndex = composed.findIndex(
+  const customPreIndex = composed.findIndex(
     (m) =>
       (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
-      "custom-high-priority",
+      "custom-pre-dispatch",
   );
   const uatIndex = composed.findIndex(
     (m) =>
       (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
       "uat-dispatch",
   );
-  const reassessmentIndex = composed.findIndex(
+  const codeReviewIndex = composed.findIndex(
     (m) =>
       (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
-      "reassessment",
+      "code-review",
   );
-  const customMediumIndex = composed.findIndex(
+  const customPostIndex = composed.findIndex(
     (m) =>
       (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
-      "custom-medium-priority",
+      "custom-post-dispatch",
   );
-  const phaseDispatchIndex = composed.findIndex(
+  const metricsIndex = composed.findIndex(
     (m) =>
       (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
-      "phase-dispatch",
+      "metrics",
   );
 
   // Verify positions exist
-  assert(mergeGuardIndex >= 0, "merge-guard should be in composed list");
-  assert(customHighIndex >= 0, "custom-high-priority should be in composed list");
+  assert(budgetCeilingIndex >= 0, "budget-ceiling should be in composed list");
+  assert(customPreIndex >= 0, "custom-pre-dispatch should be in composed list");
   assert(uatIndex >= 0, "uat-dispatch should be in composed list");
-  assert(reassessmentIndex >= 0, "reassessment should be in composed list");
-  assert(customMediumIndex >= 0, "custom-medium-priority should be in composed list");
-  assert(phaseDispatchIndex >= 0, "phase-dispatch should be in composed list");
+  assert(codeReviewIndex >= 0, "code-review should be in composed list");
+  assert(customPostIndex >= 0, "custom-post-dispatch should be in composed list");
+  assert(metricsIndex >= 0, "metrics should be in composed list");
 
-  // Verify correct ordering:
-  // merge-guard (90) > custom-high-priority (88) > uat-dispatch (85) > reassessment (80) > custom-medium-priority (78) > phase-dispatch (75)
-  assert(mergeGuardIndex < customHighIndex, "merge-guard (90) should come before custom-high-priority (88)");
-  assert(customHighIndex < uatIndex, "custom-high-priority (88) should come before uat-dispatch (85)");
-  assert(uatIndex < reassessmentIndex, "uat-dispatch (85) should come before reassessment (80)");
-  assert(reassessmentIndex < customMediumIndex, "reassessment (80) should come before custom-medium-priority (78)");
-  assert(customMediumIndex < phaseDispatchIndex, "custom-medium-priority (78) should come before phase-dispatch (75)");
+  // Verify correct ordering by stage:
+  // pre-dispatch (budget-ceiling, custom-pre-dispatch) < dispatch (uat-dispatch) < post-dispatch (code-review, custom-post-dispatch, metrics)
+  assert(budgetCeilingIndex < uatIndex, "budget-ceiling (pre-dispatch) should come before uat-dispatch (dispatch)");
+  assert(customPreIndex < uatIndex, "custom-pre-dispatch (pre-dispatch) should come before uat-dispatch (dispatch)");
+  assert(uatIndex < codeReviewIndex, "uat-dispatch (dispatch) should come before code-review (post-dispatch)");
+  assert(uatIndex < customPostIndex, "uat-dispatch (dispatch) should come before custom-post-dispatch (post-dispatch)");
+  assert(codeReviewIndex < metricsIndex, "code-review (post-dispatch) should come before metrics (post-dispatch)");
 
-  // Verify the priority metadata is correctly attached
-  const customHighMiddleware = composed[customHighIndex];
-  const customHighPriority = (customHighMiddleware as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority;
-  assertEq(customHighPriority, 88, "custom-high-priority middleware should have priority 88");
+  // Verify the stage metadata is correctly attached
+  const customPreMiddleware = composed[customPreIndex];
+  const customPreStage = (customPreMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage;
+  assertEq(customPreStage, "pre-dispatch", "custom-pre-dispatch middleware should have stage pre-dispatch");
 
-  const customMediumMiddleware = composed[customMediumIndex];
-  const customMediumPriority = (customMediumMiddleware as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority;
-  assertEq(customMediumPriority, 78, "custom-medium-priority middleware should have priority 78");
+  const customPostMiddleware = composed[customPostIndex];
+  const customPostStage = (customPostMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage;
+  assertEq(customPostStage, "post-dispatch", "custom-post-dispatch middleware should have stage post-dispatch");
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

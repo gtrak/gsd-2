@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createObservabilityMiddleware } from "../middleware/observability.js";
-import type { DispatchContext, MiddlewareConfig } from "../middleware/types.js";
+import type { DispatchContext, MiddlewareConfig, PipelineStage } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
 
 // Test counters
@@ -171,25 +171,25 @@ async function runTests(): Promise<void> {
     cleanup();
   }
 
-  // Test 4: should use priority 60 by default
-  console.log("\n=== should use priority 60 by default ===");
+  // Test 4: should use stage "post-dispatch" by default
+  console.log("\n=== should use stage post-dispatch by default ===");
   {
     const middleware = createObservabilityMiddleware();
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 60, "default priority should be 60");
+    assertEq(metadata.stage, "post-dispatch" as PipelineStage, "default stage should be post-dispatch");
     assertEq(metadata.name, "observability", "default name should be 'observability'");
   }
 
-  // Test 5: should allow custom priority via config
-  console.log("\n=== should allow custom priority via config ===");
+  // Test 5: should allow custom stage via config
+  console.log("\n=== should allow custom stage via config ===");
   {
     const config: Partial<MiddlewareConfig> = {
-      priority: 75,
+      stage: "dispatch" as PipelineStage,
       name: "custom-observability",
     };
     const middleware = createObservabilityMiddleware(config);
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 75, "custom priority should be 75");
+    assertEq(metadata.stage, "dispatch" as PipelineStage, "custom stage should be dispatch");
     assertEq(metadata.name, "custom-observability", "custom name should be used");
   }
 

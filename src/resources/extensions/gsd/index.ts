@@ -569,7 +569,7 @@ function oneLine(text: string): string {
  *
  * registerDispatchMiddleware({
  *   name: "my-custom-check",
- *   priority: 85,
+ *   stage: "dispatch",
  *   middleware: async (ctx: DispatchContext, next) => {
  *     // Custom logic
  *     await next();
@@ -583,7 +583,6 @@ export {
   clearRegisteredDispatchMiddlewares,
   composeDispatchMiddlewares,
   composeDispatchMiddlewaresWithPreferences,
-  composeDispatchMiddlewaresWithConfig,
 } from "./middleware/index.js";
 
 /**
@@ -597,6 +596,7 @@ export type {
   MiddlewareFactory,
   DispatchMiddlewareRegistration,
   GSDMiddleware,
+  PipelineStage,
 } from "./middleware/index.js";
 
 /**

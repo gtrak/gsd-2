@@ -1,22 +1,23 @@
 // GSD Extension — Validation Middleware
 // Validates GSD state before dispatch and can reject invalid states.
-// This middleware runs at Priority 98, after idempotency (100) but before budget-ceiling (95).
+// This middleware runs in the "validation" stage, after "pre-validation" but before "pre-dispatch".
 
 import type {
   DispatchContext,
   DispatchDecision,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 import type { GSDState, Phase } from "../types.js";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for validation middleware.
- * Priority 98 — runs after idempotency (100) but before budget-ceiling (95).
+ * Default pipeline stage for validation middleware.
+ * Runs in the "validation" stage, after "pre-validation" but before "pre-dispatch".
  */
-const DEFAULT_PRIORITY = 98;
+const DEFAULT_STAGE: PipelineStage = "validation";
 
 /**
  * Decision object used to signal that auto-mode should be paused
@@ -228,7 +229,7 @@ function runValidators(
  * It runs configurable validators and can pause dispatch on validation errors.
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 98)
+ * @param config.stage - Pipeline stage of the middleware (default: "validation")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "validation")
  * @param config.validators - Array of validators to run (default: DEFAULT_VALIDATORS)
@@ -238,6 +239,7 @@ function runValidators(
  * @example
  * ```typescript
  * const middleware = createValidationMiddleware({
+ *   stage: "validation",
  *   validators: [
  *     { name: "customValidator", validate: (state) => ({ valid: true }) }
  *   ],
@@ -248,7 +250,7 @@ function runValidators(
 export function createValidationMiddleware(
   config?: Partial<ValidationConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "validation";
   const validators = config?.validators ?? DEFAULT_VALIDATORS;
@@ -338,9 +340,9 @@ export function createValidationMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

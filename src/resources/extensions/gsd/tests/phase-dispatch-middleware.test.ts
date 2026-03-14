@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { PipelineStage } from "../middleware/types.js";
+
 // Test counters
 let passed = 0;
 let failed = 0;
@@ -476,29 +478,29 @@ Completed.
   });
 }
 
-// Test 11: should use priority 75 by default
-console.log("\n=== should use priority 75 by default ===");
+// Test 11: should use stage "dispatch" by default
+console.log("\n=== should use stage dispatch by default ===");
 {
   pendingTests++;
   import("../middleware/phase-dispatch.js").then(({ createPhaseDispatchMiddleware }) => {
     const middleware = createPhaseDispatchMiddleware();
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 75, "default priority should be 75");
+    assertEq(metadata.stage, "dispatch" as PipelineStage, "default stage should be dispatch");
     assertEq(metadata.name, "phase-dispatch", "default name should be 'phase-dispatch'");
     pendingTests--;
     if (pendingTests === 0) printSummary();
   });
 }
 
-// Test 12: should allow custom priority via config
-console.log("\n=== should allow custom priority via config ===");
+// Test 12: should allow custom stage via config
+console.log("\n=== should allow custom stage via config ===");
 {
   pendingTests++;
   import("../middleware/phase-dispatch.js").then(({ createPhaseDispatchMiddleware }) => {
-    const config: any = { priority: 80, name: "custom-phase-dispatch" };
+    const config: any = { stage: "pre-dispatch" as PipelineStage, name: "custom-phase-dispatch" };
     const middleware = createPhaseDispatchMiddleware(config);
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 80, "custom priority should be 80");
+    assertEq(metadata.stage, "pre-dispatch" as PipelineStage, "custom stage should be pre-dispatch");
     assertEq(metadata.name, "custom-phase-dispatch", "custom name should be used");
     pendingTests--;
     if (pendingTests === 0) printSummary();

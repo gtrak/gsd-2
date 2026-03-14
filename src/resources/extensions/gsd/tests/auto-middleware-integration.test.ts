@@ -10,6 +10,7 @@ import { loadMiddlewareConfig } from "../preferences.js";
 import type {
   DispatchContext,
   DispatchMiddleware,
+  PipelineStage,
 } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
 import type { GSDPreferences } from "../preferences.js";
@@ -174,10 +175,10 @@ function getMiddlewareName(middleware: DispatchMiddleware): string | undefined {
 }
 
 /**
- * Get middleware priority from metadata
+ * Get middleware stage from metadata
  */
-function getMiddlewarePriority(middleware: DispatchMiddleware): number | undefined {
-  return (middleware as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority;
+function getMiddlewareStage(middleware: DispatchMiddleware): PipelineStage | undefined {
+  return (middleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage;
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -190,9 +191,9 @@ console.log("=== Test 1: executeDispatchMiddlewares loads preferences and applie
   const prefs: GSDPreferences = {
     middleware: {
       enabled: [
-        { name: "idempotency", priority: 100 },
-        { name: "budget-ceiling", priority: 95 },
-        { name: "merge-guard", priority: 90 },
+        { name: "idempotency", stage: "pre-validation" as PipelineStage },
+        { name: "budget-ceiling", stage: "pre-dispatch" as PipelineStage },
+        { name: "merge-guard", stage: "pre-dispatch" as PipelineStage },
       ],
     },
   };
@@ -202,16 +203,16 @@ console.log("=== Test 1: executeDispatchMiddlewares loads preferences and applie
   // Should only have the 3 enabled middlewares
   assertEq(middlewares.length, 3, "should have exactly 3 enabled middlewares");
 
-  // Verify they are in priority order
+  // Verify they are in stage order
   const names = middlewares.map(getMiddlewareName);
   assertEq(names[0], "idempotency", "first middleware should be idempotency");
   assertEq(names[1], "budget-ceiling", "second middleware should be budget-ceiling");
   assertEq(names[2], "merge-guard", "third middleware should be merge-guard");
 
-  const priorities = middlewares.map(getMiddlewarePriority);
-  assertEq(priorities[0], 100, "idempotency should have priority 100");
-  assertEq(priorities[1], 95, "budget-ceiling should have priority 95");
-  assertEq(priorities[2], 90, "merge-guard should have priority 90");
+  const stages = middlewares.map(getMiddlewareStage);
+  assertEq(stages[0], "pre-validation", "idempotency should have stage pre-validation");
+  assertEq(stages[1], "pre-dispatch", "budget-ceiling should have stage pre-dispatch");
+  assertEq(stages[2], "pre-dispatch", "merge-guard should have stage pre-dispatch");
 }
 
 // Test 2: disabled middlewares from preferences are not executed
@@ -242,33 +243,43 @@ console.log("\n=== Test 2: disabled middlewares from preferences are not execute
   assertArrayContains(names, "phase-dispatch", "phase-dispatch should be present");
 }
 
-// Test 3: priority overrides from preferences are respected
-console.log("\n=== Test 3: priority overrides from preferences are respected ===");
+// Test 3: enabled list from preferences is respected
+console.log("\n=== Test 3: enabled list from preferences is respected ===");
 {
   const prefs: GSDPreferences = {
     middleware: {
       enabled: [
-        { name: "idempotency", priority: 100 },
-        { name: "merge-guard", priority: 90 },
-        { name: "uat-dispatch", priority: 85 },
-        { name: "reassessment", priority: 80 },
-        { name: "phase-dispatch", priority: 75 },
-        { name: "code-review", priority: 70 },
-        { name: "observability", priority: 60 },
-        { name: "budget-ceiling", priority: 50 }, // Override: move budget-ceiling to priority 50
+        { name: "idempotency" },
+        { name: "merge-guard" },
+        { name: "uat-dispatch" },
+        { name: "reassessment" },
+        { name: "phase-dispatch" },
+        { name: "code-review" },
+        { name: "observability" },
+        { name: "budget-ceiling" },
       ],
     },
   };
 
   const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
 
-  // Verify budget-ceiling is now at the end (priority 50)
+  // Verify all enabled middlewares are present with their default stages
   const names = middlewares.map(getMiddlewareName);
-  const priorities = middlewares.map(getMiddlewarePriority);
+  const stages = middlewares.map(getMiddlewareStage);
 
-  // budget-ceiling should be last (priority 50)
-  assertEq(names[names.length - 1], "budget-ceiling", "budget-ceiling should be last");
-  assertEq(priorities[priorities.length - 1], 50, "budget-ceiling should have priority 50");
+  assertArrayContains(names, "idempotency", "idempotency should be present");
+  assertArrayContains(names, "budget-ceiling", "budget-ceiling should be present");
+  assertArrayContains(names, "observability", "observability should be present");
+
+  // Verify default stages are used
+  const idempotencyIndex = names.indexOf("idempotency");
+  assertEq(stages[idempotencyIndex], "pre-validation", "idempotency should have default stage pre-validation");
+
+  const budgetCeilingIndex = names.indexOf("budget-ceiling");
+  assertEq(stages[budgetCeilingIndex], "pre-dispatch", "budget-ceiling should have default stage pre-dispatch");
+
+  const observabilityIndex = names.indexOf("observability");
+  assertEq(stages[observabilityIndex], "post-dispatch", "observability should have default stage post-dispatch");
 }
 
 // Test 4: falls back to defaults when no middleware config
@@ -321,7 +332,7 @@ console.log("\n=== Test 6: custom registered middlewares are still included ==="
   // Register a custom middleware
   registerDispatchMiddleware({
     name: "custom-middleware",
-    priority: 88,
+    stage: "dispatch",
     enabled: true,
     middleware: async (context, next) => {
       await next();
@@ -335,17 +346,14 @@ console.log("\n=== Test 6: custom registered middlewares are still included ==="
   // Should have 12 middlewares (11 default + 1 custom)
   assertEq(middlewares.length, 12, "should have 12 middlewares (11 default + 1 custom)");
 
-  // Verify custom middleware is present and in correct position (between merge-guard and uat-dispatch)
+  // Verify custom middleware is present and in correct position (in dispatch stage)
   const names = middlewares.map(getMiddlewareName);
-  const priorities = middlewares.map(getMiddlewarePriority);
+  const stages = middlewares.map(getMiddlewareStage);
 
   // Find custom middleware position
   const customIndex = names.indexOf("custom-middleware");
   assert(customIndex !== -1, "custom middleware should be present");
-  assertEq(priorities[customIndex], 88, "custom middleware should have priority 88");
-  // Should be between merge-guard (90) and uat-dispatch (85)
-  assertEq(names[customIndex - 1], "merge-guard", "custom middleware should be after merge-guard");
-  assertEq(names[customIndex + 1], "uat-dispatch", "custom middleware should be before uat-dispatch");
+  assertEq(stages[customIndex], "dispatch", "custom middleware should have stage dispatch");
 
   // Cleanup
   clearRegisteredDispatchMiddlewares();
@@ -367,10 +375,10 @@ console.log("\n=== Test 7: integration works end-to-end with real dispatch flow 
   const prefs: GSDPreferences = {
     middleware: {
       enabled: [
-        { name: "idempotency", priority: 100 },
-        { name: "budget-ceiling", priority: 95 },
-        { name: "merge-guard", priority: 90 },
-        { name: "phase-dispatch", priority: 75 },
+        { name: "idempotency", stage: "pre-validation" as PipelineStage },
+        { name: "budget-ceiling", stage: "pre-dispatch" as PipelineStage },
+        { name: "merge-guard", stage: "pre-dispatch" as PipelineStage },
+        { name: "phase-dispatch", stage: "dispatch" as PipelineStage },
       ],
       disabled: ["code-review", "uat-dispatch", "reassessment", "observability"],
     },
@@ -419,8 +427,8 @@ console.log("\n=== Test 8: loadMiddlewareConfig correctly extracts middleware pr
   const prefs: GSDPreferences = {
     middleware: {
       enabled: [
-        { name: "idempotency", priority: 100 },
-        { name: "budget-ceiling", priority: 95 },
+        { name: "idempotency", stage: "pre-validation" as PipelineStage },
+        { name: "budget-ceiling", stage: "pre-dispatch" as PipelineStage },
       ],
       disabled: ["code-review"],
     },
@@ -435,7 +443,7 @@ console.log("\n=== Test 8: loadMiddlewareConfig correctly extracts middleware pr
   assertEq(config.disabled?.length, 1, "should have 1 disabled middleware");
 
   assertEq(config.enabled?.[0].name, "idempotency", "first enabled should be idempotency");
-  assertEq(config.enabled?.[0].priority, 100, "idempotency should have priority 100");
+  assertEq(config.enabled?.[0].stage, "pre-validation" as PipelineStage, "idempotency should have stage pre-validation");
   assertEq(config.disabled?.[0], "code-review", "disabled should contain code-review");
 }
 
@@ -456,9 +464,9 @@ console.log("\n=== Test 10: combined enabled and disabled lists work correctly =
   const prefs: GSDPreferences = {
     middleware: {
       enabled: [
-        { name: "idempotency", priority: 100 },
-        { name: "budget-ceiling", priority: 95 },
-        { name: "code-review", priority: 70 },
+        { name: "idempotency", stage: "pre-validation" as PipelineStage },
+        { name: "budget-ceiling", stage: "pre-dispatch" as PipelineStage },
+        { name: "code-review", stage: "dispatch" as PipelineStage },
       ],
       disabled: ["code-review"], // code-review in both lists
     },

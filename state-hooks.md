@@ -567,3 +567,265 @@ Migration path:
 - [ ] Self-recovery works in all crash scenarios
 - [ ] Backwards compatible (extensions field optional)
 - [ ] Documentation complete
+
+### Phase 8: Pipeline Stages Refactor (PRIORITY REPLACEMENT)
+
+**Status:** ⏳ Not Started  
+**Goal:** Replace magic priority numbers with named pipeline stages  
+**Motivation:** The current priority system (0-100) creates "spooky action at a distance" - middleware authors must understand all other middlewares' priorities to place their code correctly. Named stages make intent explicit and local.
+
+#### Design Overview
+
+Replace `priority: number` with `stage: PipelineStage` where stages represent semantic phases of the dispatch flow:
+
+```typescript
+type PipelineStage = 
+  | 'pre-validation'    // Initial checks (idempotency)
+  | 'validation'        // State validation
+  | 'pre-dispatch'      // Guards (budget, merge)
+  | 'dispatch'          // Core dispatch logic
+  | 'post-dispatch'     // After-effects (review, metrics, observability)
+  | 'notification';     // Final notifications
+```
+
+#### Execution Flow
+
+```
+pre-validation → validation → pre-dispatch → dispatch → post-dispatch → notification
+     ↓               ↓              ↓            ↓             ↓               ↓
+ idempotency    validation   budget-ceiling  uat-dispatch  code-review  notifications
+                              merge-guard   reassessment  metrics
+                              custom        phase-dispatch observability
+                                            custom
+```
+
+#### Task P8.1: Define PipelineStage Type
+
+**Files:** `middleware/types.ts`
+
+**Work:**
+1. Define `PipelineStage` union type with 6 named stages
+2. Update `MiddlewareConfig` interface:
+   - Remove `priority: number`
+   - Add `stage: PipelineStage`
+3. Update `DispatchMiddlewareRegistration` interface:
+   - Remove `priority: number`
+   - Add `stage: PipelineStage`
+
+**Test:** Update existing type tests to use stage-based configs
+
+#### Task P8.2: Update Built-in Middleware Factories
+
+**Files:** `middleware/*.ts` (11 middleware files)
+
+**Work (per middleware):**
+1. Replace `priority` parameter with `stage` constant in factory
+2. Update factory signature to accept stage override
+3. Export stage constant (e.g., `IDEMPOTENCY_STAGE = 'pre-validation'`)
+
+**Built-in Mapping:**
+| Middleware | Stage |
+|------------|-------|
+| idempotency | pre-validation |
+| validation | validation |
+| budget-ceiling | pre-dispatch |
+| merge-guard | pre-dispatch |
+| uat-dispatch | dispatch |
+| reassessment | dispatch |
+| phase-dispatch | dispatch |
+| code-review | post-dispatch |
+| metrics | post-dispatch |
+| observability | post-dispatch |
+| notifications | notification |
+
+**Test:** Ensure each factory returns middleware with correct stage metadata
+
+#### Task P8.3: Rewrite Compose Functions for Stages
+
+**Files:** `middleware/index.ts`
+
+**Work:**
+1. **Remove priority sorting** - delete all sort-by-priority logic
+2. **Remove `__metadata` attachment** - no longer needed
+3. **Rewrite `composeDispatchMiddlewares()`**:
+   - Group middlewares by stage into fixed order
+   - Within each stage, preserve built-in order (no custom sorting needed)
+   - Custom middlewares append to their stage in registration order
+4. **Rewrite `composeDispatchMiddlewaresWithConfig()`**:
+   - Same pattern: group by stage, fixed stage order
+5. **Rewrite `composeDispatchMiddlewaresWithPreferences()`**:
+   - Change from priority override to stage assignment
+   - Custom middlewares can specify stage in preferences
+6. **Remove `DEFAULT_MIDDLEWARE_PRIORITIES`** constant
+
+**Execution Order Implementation:**
+```typescript
+const STAGE_ORDER: PipelineStage[] = [
+  'pre-validation',
+  'validation',
+  'pre-dispatch',
+  'dispatch',
+  'post-dispatch',
+  'notification'
+];
+
+function groupByStage(middlewares: Middleware[]): Map<PipelineStage, Middleware[]> {
+  // Group by stage, preserving registration order within stage
+}
+```
+
+**Test:** 50+ assertions testing stage-based ordering
+
+#### Task P8.4: Update Custom Middleware Registration
+
+**Files:** `middleware/index.ts`, `hooks.ts`
+
+**Work:**
+1. Update `registerDispatchMiddleware()` signature:
+   ```typescript
+   registerDispatchMiddleware({
+     name: 'my-custom-guard',
+     stage: 'pre-dispatch',  // Explicit intent, not magic numbers
+     middleware: myGuard
+   });
+   ```
+2. Update `dispatchMiddlewareRegistry` to index by stage
+3. Update `getRegisteredDispatchMiddlewares()` to return stage-grouped results
+4. Deprecate `registerHook()` in hooks.ts (already deprecated, ensure warning mentions stages)
+
+**Test:** Update registry tests for stage-based registration
+
+#### Task P8.5: Update Preferences Loading
+
+**Files:** `preferences.ts`, `middleware/index.ts`
+
+**Work:**
+1. Update `MiddlewarePreferences` interface:
+   ```typescript
+   interface MiddlewarePreferences {
+     enabled?: Array<{
+       name: string;
+       stage?: PipelineStage;  // Can override default stage
+       config?: Record<string, unknown>;
+     }>;
+     disabled?: string[];
+   }
+   ```
+2. Update `loadMiddlewareConfig()` to read stage assignments
+3. Update `composeDispatchMiddlewaresWithPreferences()` to use stage from config
+
+**Preferences Example:**
+```yaml
+gsd:
+  middleware:
+    enabled:
+      - name: budget-ceiling
+        stage: pre-dispatch
+      - name: my-custom-guard
+        stage: pre-dispatch
+    disabled:
+      - uat-dispatch
+```
+
+**Test:** Update preferences tests for stage-based configuration
+
+#### Task P8.6: Update Auto.ts Integration
+
+**Files:** `auto.ts`
+
+**Work:**
+1. Update any hardcoded priority references to use stages
+2. Ensure `composeDispatchMiddlewaresWithPreferences()` integration still works
+3. Verify extension data loading happens at correct stage
+
+**Test:** Update integration tests, verify dispatch flow unchanged
+
+#### Task P8.7: Update Extension Author API
+
+**Files:** `index.ts`
+
+**Work:**
+1. Export `PipelineStage` type for extension authors
+2. Update API documentation examples to use stages
+3. Ensure backwards compatibility (old registerHook deprecated but still works)
+
+**Example for extension authors:**
+```typescript
+import { registerDispatchMiddleware, PipelineStage } from '@gsd/core';
+
+registerDispatchMiddleware({
+  name: 'my-logger',
+  stage: 'post-dispatch' as PipelineStage,
+  middleware: async (ctx, next) => {
+    console.log('Before dispatch');
+    await next();
+    console.log('After dispatch');
+  }
+});
+```
+
+**Test:** Update extension API tests for stage-based registration
+
+#### Task P8.8: Update All Existing Tests
+
+**Files:** All `tests/*-middleware.test.ts`, `tests/middleware-*.test.ts`
+
+**Work:**
+1. Replace all `priority` values with `stage` values
+2. Replace priority-based assertions with stage-based assertions
+3. Remove tests that verify priority sorting (replace with stage ordering tests)
+4. Update test descriptions to reference stages
+
+**Test Files to Update:**
+- `middleware-registry.test.ts` - 54+ tests
+- `middleware-preferences.test.ts` - 60+ tests
+- `middleware-integration.test.ts` - 50+ tests
+- `auto-middleware-integration.test.ts` - 54+ tests
+- `extension-api.test.ts` - 41 tests
+- `metrics-middleware.test.ts` - 31 tests
+- `notifications-middleware.test.ts` - 35 tests
+- `validation-middleware.test.ts` - 31 tests
+- All 11 individual middleware test files
+
+#### Task P8.9: Documentation Update
+
+**Files:** `README.md` or create `middleware/README.md`
+
+**Work:**
+1. Document the 6 pipeline stages and their purposes
+2. Document which built-in middlewares run at which stage
+3. Document how extension authors choose a stage
+4. Document stage execution order with visual diagram
+5. Update all code examples to use `stage` instead of `priority`
+6. Add migration guide from priority to stages
+
+**Documentation Sections:**
+- "Understanding Pipeline Stages"
+- "Choosing the Right Stage for Your Middleware"
+- "Built-in Middleware Reference" (with stages)
+- "Configuration via Preferences" (stage-based)
+- "Migration from Priority Numbers"
+
+#### Success Criteria
+
+- [ ] All priority numbers removed from codebase
+- [ ] PipelineStage type defined with 6 stages
+- [ ] All 11 built-in middlewares declare their stage
+- [ ] Compose functions use stage-based ordering
+- [ ] Custom middleware registration uses stage
+- [ ] Preferences loading supports stage assignment
+- [ ] Extension API exports PipelineStage type
+- [ ] All 350+ tests updated and passing
+- [ ] Documentation updated with stage-based examples
+- [ ] No breaking changes to runtime behavior (just API)
+- [ ] Migration guide provided for existing extensions
+
+#### Rollback Plan
+
+If issues arise:
+1. Branch: `git checkout -b pipeline-stages-backup`
+2. Each task is independent - can revert individual files
+3. Priority system can be restored by reverting P8.1-P8.5
+4. Tests serve as regression safety net
+
+---

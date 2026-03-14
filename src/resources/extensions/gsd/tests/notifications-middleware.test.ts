@@ -9,6 +9,7 @@ import { createNotificationsMiddleware } from "../middleware/notifications.js";
 import type {
   DispatchContext,
   DispatchMiddleware,
+  PipelineStage,
 } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
 
@@ -381,24 +382,24 @@ console.log("\n=== Test 8: notifications middleware includes decision info in no
   cleanup();
 }
 
-// Test 9: notifications middleware respects config priority
-console.log("\n=== Test 9: notifications middleware respects config priority ===");
+// Test 9: notifications middleware respects config stage
+console.log("\n=== Test 9: notifications middleware respects config stage ===");
 {
-  // Test default priority
+  // Test default stage
   const defaultMiddleware = createNotificationsMiddleware();
-  const defaultMetadata = (defaultMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const defaultMetadata = (defaultMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(defaultMetadata?.priority, 55, "default notifications middleware should have priority 55");
+  assertEq(defaultMetadata?.stage, "notification" as PipelineStage, "default notifications middleware should have stage notification");
   assertEq(defaultMetadata?.name, "notifications", "default notifications middleware should have name 'notifications'");
 
-  // Test custom priority
+  // Test custom stage
   const customMiddleware = createNotificationsMiddleware({
-    priority: 70,
+    stage: "post-dispatch" as PipelineStage,
     name: "custom-notifications",
   });
-  const customMetadata = (customMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const customMetadata = (customMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(customMetadata?.priority, 70, "custom notifications middleware should have custom priority");
+  assertEq(customMetadata?.stage, "post-dispatch" as PipelineStage, "custom notifications middleware should have custom stage");
   assertEq(customMetadata?.name, "custom-notifications", "custom notifications middleware should have custom name");
 }
 
@@ -407,23 +408,23 @@ console.log("\n=== Test 10: notifications middleware factory creates middleware 
 {
   // Test default configuration
   const defaultMiddleware = createNotificationsMiddleware();
-  const defaultMetadata = (defaultMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const defaultMetadata = (defaultMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(defaultMetadata?.priority, 55, "default middleware should have priority 55");
+  assertEq(defaultMetadata?.stage, "notification" as PipelineStage, "default middleware should have stage notification");
   assertEq(defaultMetadata?.name, "notifications", "default middleware should have name 'notifications'");
 
   // Test custom configuration
   const customMiddleware = createNotificationsMiddleware({
-    priority: 55,
+    stage: "notification" as PipelineStage,
     enabled: true,
     name: "my-notifications",
     onDispatchStart: true,
     onDispatchComplete: true,
     onError: true,
   });
-  const customMetadata = (customMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const customMetadata = (customMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(customMetadata?.priority, 55, "custom middleware should have priority 55");
+  assertEq(customMetadata?.stage, "notification" as PipelineStage, "custom middleware should have stage notification");
   assertEq(customMetadata?.name, "my-notifications", "custom middleware should have custom name");
 
   // Test that each call returns a new instance

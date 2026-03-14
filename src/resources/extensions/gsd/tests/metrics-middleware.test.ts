@@ -9,6 +9,7 @@ import { createMetricsMiddleware } from "../middleware/metrics.js";
 import type {
   DispatchContext,
   DispatchMiddleware,
+  PipelineStage,
 } from "../middleware/types.js";
 import type { GSDState } from "../types.js";
 
@@ -320,13 +321,13 @@ console.log("\n=== Test 7: metrics middleware handles errors gracefully ===");
   cleanup();
 }
 
-// Test 8: metrics middleware uses priority 65
-console.log("\n=== Test 8: metrics middleware uses priority 65 ===");
+// Test 8: metrics middleware uses stage "post-dispatch"
+console.log("\n=== Test 8: metrics middleware uses stage post-dispatch ===");
 {
   const middleware = createMetricsMiddleware();
-  const metadata = (middleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const metadata = (middleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(metadata?.priority, 65, "metrics middleware should have priority 65");
+  assertEq(metadata?.stage, "post-dispatch" as PipelineStage, "metrics middleware should have stage post-dispatch");
   assertEq(metadata?.name, "metrics", "metrics middleware should have name 'metrics'");
 }
 
@@ -348,7 +349,7 @@ console.log("\n=== Test 9: metrics middleware respects enabled/disabled config =
   assert(context.workingState.extensions?.metrics === undefined, "disabled middleware should not store metrics");
 
   // Test enabled middleware with explicit config
-  const enabledMiddleware = createMetricsMiddleware({ enabled: true, priority: 65 });
+  const enabledMiddleware = createMetricsMiddleware({ enabled: true, stage: "post-dispatch" as PipelineStage });
   const context2 = createMockDispatchContext(dir);
 
   await enabledMiddleware(context2, async () => {
@@ -356,8 +357,8 @@ console.log("\n=== Test 9: metrics middleware respects enabled/disabled config =
   });
 
   assert(context2.workingState.extensions?.metrics !== undefined, "enabled middleware should store metrics");
-  const metadata = (enabledMiddleware as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata;
-  assertEq(metadata?.priority, 65, "enabled middleware should have priority 65");
+  const metadata = (enabledMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata;
+  assertEq(metadata?.stage, "post-dispatch" as PipelineStage, "enabled middleware should have stage post-dispatch");
 
   cleanup();
 }
@@ -367,20 +368,20 @@ console.log("\n=== Test 10: metrics middleware factory creates middleware correc
 {
   // Test default configuration
   const defaultMiddleware = createMetricsMiddleware();
-  const defaultMetadata = (defaultMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const defaultMetadata = (defaultMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(defaultMetadata?.priority, 65, "default middleware should have priority 65");
+  assertEq(defaultMetadata?.stage, "post-dispatch" as PipelineStage, "default middleware should have stage post-dispatch");
   assertEq(defaultMetadata?.name, "metrics", "default middleware should have name 'metrics'");
 
   // Test custom configuration
   const customMiddleware = createMetricsMiddleware({
-    priority: 70,
+    stage: "dispatch" as PipelineStage,
     enabled: true,
     name: "custom-metrics",
   });
-  const customMetadata = (customMiddleware as DispatchMiddleware & { __metadata?: { priority: number; name: string } }).__metadata;
+  const customMetadata = (customMiddleware as DispatchMiddleware & { __metadata?: { stage: PipelineStage; name: string } }).__metadata;
 
-  assertEq(customMetadata?.priority, 70, "custom middleware should have custom priority");
+  assertEq(customMetadata?.stage, "dispatch" as PipelineStage, "custom middleware should have custom stage");
   assertEq(customMetadata?.name, "custom-metrics", "custom middleware should have custom name");
 
   // Test that each call returns a new instance

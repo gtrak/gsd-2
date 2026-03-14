@@ -3,6 +3,21 @@
 
 import type { HookContext, GSDMiddleware } from "../hooks.js";
 
+// ─── Pipeline Stage Type ───────────────────────────────────────────────────
+
+/**
+ * Named pipeline stages for middleware execution order.
+ * Replaces magic priority numbers with explicit stage names for better intent.
+ * Stages execute in the order listed below.
+ */
+export type PipelineStage =
+  | "pre-validation" // Initial checks (idempotency)
+  | "validation" // State validation
+  | "pre-dispatch" // Guards (budget, merge)
+  | "dispatch" // Core dispatch logic
+  | "post-dispatch" // After-effects (review, metrics, observability)
+  | "notification"; // Final notifications
+
 // ─── Dispatch Decision ─────────────────────────────────────────────────────
 
 /**
@@ -89,11 +104,11 @@ export type DispatchMiddleware = (
  */
 export interface MiddlewareConfig {
   /**
-   * Priority of the middleware (0-100).
-   * Higher values execute first.
-   * @default 50
+   * Pipeline stage for middleware execution order.
+   * Stages execute in a fixed order: pre-validation, validation, pre-dispatch,
+   * dispatch, post-dispatch, notification.
    */
-  priority: number;
+  stage: PipelineStage;
 
   /**
    * Whether the middleware is enabled.
@@ -130,11 +145,11 @@ export interface DispatchMiddlewareRegistration {
   name: string;
 
   /**
-   * Priority of the middleware (0-100).
-   * Higher values execute first.
-   * @default 50
+   * Pipeline stage for middleware execution order.
+   * Stages execute in a fixed order: pre-validation, validation, pre-dispatch,
+   * dispatch, post-dispatch, notification.
    */
-  priority: number;
+  stage: PipelineStage;
 
   /**
    * Whether the middleware is enabled.

@@ -1,21 +1,22 @@
 // GSD Extension — Observability Middleware
 // Emits observability warnings after a dispatch decision is made.
-// This is the last middleware in the chain (Priority 60).
+// This middleware runs in the "post-dispatch" stage.
 
 import type {
   DispatchContext,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 import { emitObservabilityWarnings } from "../auto.js";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for observability middleware.
- * Priority 60 to ensure it runs after other middlewares but before dispatch.
+ * Default pipeline stage for observability middleware.
+ * Runs in the "post-dispatch" stage for after-effects tracking.
  */
-const DEFAULT_PRIORITY = 60;
+const DEFAULT_STAGE: PipelineStage = "post-dispatch";
 
 // ─── Middleware Factory ────────────────────────────────────────────────────
 
@@ -27,20 +28,20 @@ const DEFAULT_PRIORITY = 60;
  * it emits observability warnings for the dispatched unit.
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 60)
+ * @param config.stage - Pipeline stage of the middleware (default: "post-dispatch")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "observability")
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
- * const middleware = createObservabilityMiddleware({ priority: 60 });
+ * const middleware = createObservabilityMiddleware({ stage: "post-dispatch" });
  * ```
  */
 export function createObservabilityMiddleware(
   config?: Partial<MiddlewareConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "observability";
 
@@ -63,9 +64,9 @@ export function createObservabilityMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

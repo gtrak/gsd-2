@@ -4,6 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import type { GitPreferences } from "./git-service.ts";
 import { VALID_BRANCH_NAME } from "./git-service.ts";
+import type { PipelineStage } from "./middleware/types.js";
 
 const GLOBAL_PREFERENCES_PATH = join(homedir(), ".gsd", "preferences.md");
 const LEGACY_GLOBAL_PREFERENCES_PATH = join(homedir(), ".pi", "agent", "gsd-preferences.md");
@@ -54,7 +55,7 @@ export interface HooksPreferences {
 export interface MiddlewarePreferences {
   enabled?: Array<{
     name: string;
-    priority?: number;
+    stage?: PipelineStage;
     config?: Record<string, unknown>;
   }>;
   disabled?: string[];
@@ -531,6 +532,24 @@ export function resolveAutoSupervisorConfig(): AutoSupervisorConfig {
 // ─── Middleware Configuration ──────────────────────────────────────────────
 
 /**
+ * Default stage mapping for built-in middlewares.
+ * Used when no stage is specified in preferences.
+ */
+const DEFAULT_MIDDLEWARE_STAGES: Record<string, PipelineStage> = {
+  idempotency: "pre-validation",
+  validation: "validation",
+  "budget-ceiling": "pre-dispatch",
+  "merge-guard": "pre-dispatch",
+  "uat-dispatch": "dispatch",
+  reassessment: "dispatch",
+  "phase-dispatch": "dispatch",
+  "code-review": "post-dispatch",
+  metrics: "post-dispatch",
+  observability: "post-dispatch",
+  notifications: "notification",
+};
+
+/**
  * Loads middleware configuration from GSD preferences.
  * Validates and normalizes the middleware configuration, applying defaults
  * and filtering invalid values.
@@ -541,7 +560,7 @@ export function resolveAutoSupervisorConfig(): AutoSupervisorConfig {
  * @example
  * ```typescript
  * const config = loadMiddlewareConfig(prefs);
- * console.log(config.enabled);  // [{ name: "idempotency", priority: 100 }, ...]
+ * console.log(config.enabled);  // [{ name: "idempotency", stage: "pre-validation" }, ...]
  * console.log(config.disabled);  // ["uat-dispatch", ...]
  * ```
  */
@@ -555,7 +574,7 @@ export function loadMiddlewareConfig(prefs: GSDPreferences): MiddlewarePreferenc
 
   // Process enabled middlewares
   if (middlewarePrefs.enabled && middlewarePrefs.enabled.length > 0) {
-    const enabled: Array<{ name: string; priority: number; config?: Record<string, unknown> }> = [];
+    const enabled: Array<{ name: string; stage: PipelineStage; config?: Record<string, unknown> }> = [];
 
     for (const entry of middlewarePrefs.enabled) {
       if (!entry || typeof entry !== "object" || !entry.name) {
@@ -567,25 +586,12 @@ export function loadMiddlewareConfig(prefs: GSDPreferences): MiddlewarePreferenc
         continue; // Skip entries without a valid name
       }
 
-      // Validate and apply default priority
-      let priority = 50; // Default priority
-      if (entry.priority !== undefined) {
-        const rawPriority = entry.priority;
-        if (typeof rawPriority === "number" && Number.isFinite(rawPriority)) {
-          priority = rawPriority;
-        } else if (typeof rawPriority === "string" && !isNaN(Number(rawPriority))) {
-          priority = Number(rawPriority);
-        }
-      }
+      // Determine stage - use explicit stage if provided, otherwise use default
+      const stage = entry.stage ?? DEFAULT_MIDDLEWARE_STAGES[name] ?? "dispatch";
 
-      // Filter invalid priorities (must be between 0 and 100)
-      if (priority < 0 || priority > 100) {
-        continue; // Skip entries with invalid priorities
-      }
-
-      const normalizedEntry: { name: string; priority: number; config?: Record<string, unknown> } = {
+      const normalizedEntry: { name: string; stage: PipelineStage; config?: Record<string, unknown> } = {
         name,
-        priority,
+        stage,
       };
 
       // Include config if present and valid
@@ -680,7 +686,7 @@ function mergeMiddlewarePreferences(
   const result: MiddlewarePreferences = {};
 
   // Merge enabled middlewares - override takes precedence by name
-  const enabledMap = new Map<string, { name: string; priority?: number; config?: Record<string, unknown> }>();
+  const enabledMap = new Map<string, { name: string; stage?: PipelineStage; config?: Record<string, unknown> }>();
   for (const entry of base?.enabled ?? []) {
     if (entry.name) enabledMap.set(entry.name, entry);
   }
@@ -841,9 +847,19 @@ function validatePreferences(preferences: GSDPreferences): {
     const middleware: MiddlewarePreferences = {};
     const m = preferences.middleware;
 
+    // Valid stage values
+    const validStages = new Set<PipelineStage>([
+      "pre-validation",
+      "validation",
+      "pre-dispatch",
+      "dispatch",
+      "post-dispatch",
+      "notification",
+    ]);
+
     // Validate enabled middlewares
     if (m.enabled && Array.isArray(m.enabled)) {
-      const validEnabled: Array<{ name: string; priority?: number; config?: Record<string, unknown> }> = [];
+      const validEnabled: Array<{ name: string; stage?: PipelineStage; config?: Record<string, unknown> }> = [];
       for (const entry of m.enabled) {
         if (!entry || typeof entry !== "object") {
           errors.push("invalid middleware enabled entry");
@@ -854,28 +870,17 @@ function validatePreferences(preferences: GSDPreferences): {
           errors.push("middleware enabled entry missing name");
           continue;
         }
-        const validatedEntry: { name: string; priority?: number; config?: Record<string, unknown> } = {
+        const validatedEntry: { name: string; stage?: PipelineStage; config?: Record<string, unknown> } = {
           name: nameEntry.name.trim(),
         };
 
-        // Validate priority if present
-        if (entry.priority !== undefined) {
-          const rawPriority = entry.priority;
-          if (typeof rawPriority === "number" && Number.isFinite(rawPriority)) {
-            if (rawPriority < 0 || rawPriority > 100) {
-              errors.push(`middleware priority ${rawPriority} out of range (0-100)`);
-            } else {
-              validatedEntry.priority = rawPriority;
-            }
-          } else if (typeof rawPriority === "string" && !isNaN(Number(rawPriority))) {
-            const numPriority = Number(rawPriority);
-            if (numPriority < 0 || numPriority > 100) {
-              errors.push(`middleware priority ${numPriority} out of range (0-100)`);
-            } else {
-              validatedEntry.priority = numPriority;
-            }
+        // Validate stage if present
+        if (entry.stage !== undefined) {
+          const rawStage = entry.stage;
+          if (typeof rawStage === "string" && validStages.has(rawStage as PipelineStage)) {
+            validatedEntry.stage = rawStage as PipelineStage;
           } else {
-            errors.push("middleware priority must be a number");
+            errors.push(`middleware stage must be one of: ${Array.from(validStages).join(", ")}`);
           }
         }
 

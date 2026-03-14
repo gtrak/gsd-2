@@ -1,11 +1,12 @@
 // GSD Extension — Notifications Middleware
 // Sends notifications at key dispatch events (before/after dispatch).
-// This middleware runs near the end of the chain (Priority 55).
+// This middleware runs in the "notification" stage, the last stage in the chain.
 
 import type {
   DispatchContext,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -39,10 +40,10 @@ export interface NotificationsConfig extends MiddlewareConfig {
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for notifications middleware.
- * Priority 55 to ensure it runs after metrics (65) and observability (60).
+ * Default pipeline stage for notifications middleware.
+ * Runs in the "notification" stage, the last stage in the chain.
  */
-const DEFAULT_PRIORITY = 55;
+const DEFAULT_STAGE: PipelineStage = "notification";
 
 /**
  * Default message for dispatch start notification.
@@ -73,7 +74,7 @@ const DEFAULT_ERROR_MSG = "Dispatch error: {error}";
  * if a decision was made.
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 55)
+ * @param config.stage - Pipeline stage of the middleware (default: "notification")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "notifications")
  * @param config.onDispatchStart - Enable dispatch start notification (default: false)
@@ -84,6 +85,7 @@ const DEFAULT_ERROR_MSG = "Dispatch error: {error}";
  * @example
  * ```typescript
  * const middleware = createNotificationsMiddleware({
+ *   stage: "notification",
  *   onDispatchStart: true,
  *   onDispatchComplete: true,
  * });
@@ -92,6 +94,7 @@ const DEFAULT_ERROR_MSG = "Dispatch error: {error}";
  * @example
  * ```typescript
  * const middleware = createNotificationsMiddleware({
+ *   stage: "notification",
  *   onDispatchStart: "Starting dispatch for {unitType} {unitId}",
  *   onDispatchComplete: "Completed dispatch for {unitType} {unitId}",
  *   onError: "Failed to dispatch: {error}",
@@ -101,7 +104,7 @@ const DEFAULT_ERROR_MSG = "Dispatch error: {error}";
 export function createNotificationsMiddleware(
   config?: Partial<NotificationsConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "notifications";
   const onDispatchStart = config?.onDispatchStart ?? false;
@@ -205,9 +208,9 @@ export function createNotificationsMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

@@ -1,22 +1,23 @@
 // GSD Extension — Idempotency Middleware
 // Checks if a unit has already been completed and should be skipped.
-// This is the first middleware in the chain (Priority 100).
+// This is the first middleware in the chain (pre-validation stage).
 
 import type {
   DispatchContext,
   DispatchDecision,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 import { verifyExpectedArtifact, removePersistedKey } from "../auto.js";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for idempotency middleware.
- * Highest priority (100) to ensure idempotency checks run first.
+ * Default pipeline stage for idempotency middleware.
+ * Runs in pre-validation stage to ensure idempotency checks happen first.
  */
-const DEFAULT_PRIORITY = 100;
+const DEFAULT_STAGE: PipelineStage = "pre-validation";
 
 /**
  * Decision object used to signal that a unit should be skipped
@@ -40,20 +41,20 @@ export const SKIP_DECISION: DispatchDecision = {
  * record and allows the unit to be re-run.
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 100)
+ * @param config.stage - Pipeline stage of the middleware (default: "pre-validation")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "idempotency")
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
- * const middleware = createIdempotencyMiddleware({ priority: 100 });
+ * const middleware = createIdempotencyMiddleware({ stage: "pre-validation" });
  * ```
  */
 export function createIdempotencyMiddleware(
   config?: Partial<MiddlewareConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "idempotency";
 
@@ -116,9 +117,9 @@ export function createIdempotencyMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

@@ -301,29 +301,29 @@ console.log("\n=== should build correct unitId from mid and sliceId ===");
   });
 }
 
-// Test 5: should use priority 80 by default
-console.log("\n=== should use priority 80 by default ===");
+// Test 5: should use stage 'dispatch' by default
+console.log("\n=== should use stage 'dispatch' by default ===");
 {
   pendingTests++;
   import("../middleware/reassessment.js").then(({ createReassessmentMiddleware }) => {
     const middleware = createReassessmentMiddleware();
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 80, "default priority should be 80");
+    assertEq(metadata.stage, "dispatch", "default stage should be 'dispatch'");
     assertEq(metadata.name, "reassessment", "default name should be 'reassessment'");
     pendingTests--;
     if (pendingTests === 0) printSummary();
   });
 }
 
-// Test 6: should allow custom priority via config
-console.log("\n=== should allow custom priority via config ===");
+// Test 6: should allow custom stage via config
+console.log("\n=== should allow custom stage via config ===");
 {
   pendingTests++;
   import("../middleware/reassessment.js").then(({ createReassessmentMiddleware }) => {
-    const config: any = { priority: 70, name: "custom-reassessment" };
+    const config: any = { stage: "post-dispatch", name: "custom-reassessment" };
     const middleware = createReassessmentMiddleware(config);
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 70, "custom priority should be 70");
+    assertEq(metadata.stage, "post-dispatch", "custom stage should be 'post-dispatch'");
     assertEq(metadata.name, "custom-reassessment", "custom name should be used");
     pendingTests--;
     if (pendingTests === 0) printSummary();

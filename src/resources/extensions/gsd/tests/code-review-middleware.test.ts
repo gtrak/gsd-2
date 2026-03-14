@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { PipelineStage } from "../middleware/types.js";
+
 // Test counters
 let passed = 0;
 let failed = 0;
@@ -377,29 +379,29 @@ console.log("\n=== should include review metadata in decision ===");
   });
 }
 
-// Test 8: should use priority 70 by default
-console.log("\n=== should use priority 70 by default ===");
+// Test 8: should use stage "dispatch" by default
+console.log("\n=== should use stage dispatch by default ===");
 {
   pendingTests++;
   import("../middleware/code-review.js").then(({ createCodeReviewMiddleware }) => {
     const middleware = createCodeReviewMiddleware();
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 70, "default priority should be 70");
+    assertEq(metadata.stage, "dispatch" as PipelineStage, "default stage should be dispatch");
     assertEq(metadata.name, "code-review", "default name should be 'code-review'");
     pendingTests--;
     if (pendingTests === 0) printSummary();
   });
 }
 
-// Test 9: should allow custom priority via config
-console.log("\n=== should allow custom priority via config ===");
+// Test 9: should allow custom stage via config
+console.log("\n=== should allow custom stage via config ===");
 {
   pendingTests++;
   import("../middleware/code-review.js").then(({ createCodeReviewMiddleware }) => {
-    const config: any = { priority: 80, name: "custom-code-review" };
+    const config: any = { stage: "post-dispatch" as PipelineStage, name: "custom-code-review" };
     const middleware = createCodeReviewMiddleware(config);
     const metadata = (middleware as any).__metadata;
-    assertEq(metadata.priority, 80, "custom priority should be 80");
+    assertEq(metadata.stage, "post-dispatch" as PipelineStage, "custom stage should be post-dispatch");
     assertEq(metadata.name, "custom-code-review", "custom name should be used");
     pendingTests--;
     if (pendingTests === 0) printSummary();

@@ -14,6 +14,7 @@ export type {
   MiddlewareFactory,
   DispatchMiddlewareRegistration,
   GSDMiddleware,
+  PipelineStage,
 } from "./types.js";
 export type { NotificationsConfig } from "./notifications.js";
 export type { ValidationConfig, ValidatorConfig, ValidatorFunction, ValidationResult, ValidationResults } from "./validation.js";
@@ -41,13 +42,12 @@ export { createValidationMiddleware } from "./validation.js";
  * Export decision constants used by middlewares.
  */
 export { SKIP_DECISION } from "./idempotency.js";
-export { PAUSE_DECISION as BUDGET_PAUSE_DECISION } from "./budget-ceiling.js";
-export { PAUSE_DECISION as VALIDATION_PAUSE_DECISION } from "./validation.js";
+export { PAUSE_DECISION } from "./budget-ceiling.js";
 export { MERGE_ERROR_DECISION } from "./merge-guard.js";
 
 // ─── Compose Functions ─────────────────────────────────────────────────────
 
-import type { DispatchMiddleware, MiddlewareConfig, GSDMiddleware, DispatchMiddlewareRegistration } from "./types.js";
+import type { DispatchMiddleware, MiddlewareConfig, GSDMiddleware, DispatchMiddlewareRegistration, PipelineStage } from "./types.js";
 import type { GSDPreferences, MiddlewarePreferences } from "../preferences.js";
 import { createIdempotencyMiddleware } from "./idempotency.js";
 import { createBudgetCeilingMiddleware } from "./budget-ceiling.js";
@@ -62,74 +62,17 @@ import { createNotificationsMiddleware } from "./notifications.js";
 import { createValidationMiddleware } from "./validation.js";
 
 /**
- * Configuration interface for composing middleware chains with custom options.
- * Each property corresponds to a middleware and allows partial configuration.
+ * Pipeline stage order for sorting middlewares.
+ * Stages execute in this order: pre-validation → validation → pre-dispatch → dispatch → post-dispatch → notification
  */
-export interface MiddlewareChainConfig {
-  /** Configuration for idempotency middleware (priority 100) */
-  idempotency?: Partial<MiddlewareConfig>;
-  /** Configuration for validation middleware (priority 98) */
-  validation?: Partial<MiddlewareConfig>;
-  /** Configuration for budget ceiling middleware (priority 95) */
-  budgetCeiling?: Partial<MiddlewareConfig>;
-  /** Configuration for merge guard middleware (priority 90) */
-  mergeGuard?: Partial<MiddlewareConfig>;
-  /** Configuration for UAT dispatch middleware (priority 85) */
-  uatDispatch?: Partial<MiddlewareConfig>;
-  /** Configuration for reassessment middleware (priority 80) */
-  reassessment?: Partial<MiddlewareConfig>;
-  /** Configuration for phase dispatch middleware (priority 75) */
-  phaseDispatch?: Partial<MiddlewareConfig>;
-  /** Configuration for code review middleware (priority 70) */
-  codeReview?: Partial<MiddlewareConfig>;
-  /** Configuration for metrics middleware (priority 65) */
-  metrics?: Partial<MiddlewareConfig>;
-  /** Configuration for observability middleware (priority 60) */
-  observability?: Partial<MiddlewareConfig>;
-  /** Configuration for notifications middleware (priority 55) */
-  notifications?: Partial<MiddlewareConfig>;
-}
-
-/**
- * Composes all dispatch middlewares with custom configuration options.
- *
- * Allows enabling/disabling individual middlewares and customizing their
- * priority and name. Disabled middlewares are filtered out of the result.
- *
- * @param config - Optional configuration for each middleware
- * @returns An array of enabled DispatchMiddleware functions sorted by priority
- *
- * @example
- * ```typescript
- * const middlewares = composeDispatchMiddlewaresWithConfig({
- *   idempotency: { enabled: true },
- *   budgetCeiling: { enabled: false },
- * });
- * ```
- */
-export function composeDispatchMiddlewaresWithConfig(
-  config: MiddlewareChainConfig = {}
-): DispatchMiddleware[] {
-  const middlewares = [
-    createIdempotencyMiddleware(config.idempotency),
-    createValidationMiddleware(config.validation),
-    createBudgetCeilingMiddleware(config.budgetCeiling),
-    createMergeGuardMiddleware(config.mergeGuard),
-    createUatDispatchMiddleware(config.uatDispatch),
-    createReassessmentMiddleware(config.reassessment),
-    createPhaseDispatchMiddleware(config.phaseDispatch),
-    createCodeReviewMiddleware(config.codeReview),
-    createMetricsMiddleware(config.metrics),
-    createObservabilityMiddleware(config.observability),
-    createNotificationsMiddleware(config.notifications),
-  ].filter(m => (m as DispatchMiddleware & { __metadata?: unknown }).__metadata !== undefined);
-
-  return middlewares.sort((a, b) => {
-    const priorityA = (a as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    const priorityB = (b as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    return priorityB - priorityA;
-  });
-}
+const STAGE_ORDER: Record<PipelineStage, number> = {
+  "pre-validation": 0,
+  "validation": 1,
+  "pre-dispatch": 2,
+  "dispatch": 3,
+  "post-dispatch": 4,
+  "notification": 5,
+};
 
 // ─── Unified Middleware Registration ────────────────────────────────────────
 
@@ -147,7 +90,7 @@ const dispatchMiddlewareRegistry = new Map<string, DispatchMiddlewareRegistratio
  *
  * @param registration - Configuration for the middleware registration
  * @param registration.name - Unique name for the middleware (used for deduplication)
- * @param registration.priority - Priority of the middleware (0-100, default: 50)
+ * @param registration.stage - Pipeline stage of the middleware (default: "dispatch")
  * @param registration.enabled - Whether the middleware is enabled (default: true)
  * @param registration.middleware - The middleware function
  *
@@ -155,7 +98,7 @@ const dispatchMiddlewareRegistry = new Map<string, DispatchMiddlewareRegistratio
  * ```typescript
  * registerDispatchMiddleware({
  *   name: "my-custom-middleware",
- *   priority: 85,
+ *   stage: "dispatch",
  *   enabled: true,
  *   middleware: async (context, next) => {
  *     // Custom logic before next middleware
@@ -167,37 +110,37 @@ const dispatchMiddlewareRegistry = new Map<string, DispatchMiddlewareRegistratio
  */
 export function registerDispatchMiddleware(registration: {
   name: string;
-  priority?: number;
+  stage?: PipelineStage;
   enabled?: boolean;
   middleware: DispatchMiddleware | GSDMiddleware;
 }): void {
   dispatchMiddlewareRegistry.set(registration.name, {
     name: registration.name,
-    priority: registration.priority ?? 50,
+    stage: registration.stage ?? "dispatch",
     enabled: registration.enabled ?? true,
     middleware: registration.middleware,
   });
 }
 
 /**
- * Get all registered custom dispatch middlewares sorted by priority.
+ * Get all registered custom dispatch middlewares sorted by stage.
  *
- * Returns middlewares sorted by priority (highest first).
+ * Returns middlewares sorted by stage (pre-validation first, notification last).
  * Disabled middlewares are included but can be filtered by the caller.
  *
- * @returns An array of registered middleware configurations sorted by priority
+ * @returns An array of registered middleware configurations sorted by stage
  *
  * @example
  * ```typescript
  * const middlewares = getRegisteredDispatchMiddlewares();
  * for (const mw of middlewares) {
- *   console.log(`${mw.name} (priority: ${mw.priority})`);
+ *   console.log(`${mw.name} (stage: ${mw.stage})`);
  * }
  * ```
  */
 export function getRegisteredDispatchMiddlewares(): DispatchMiddlewareRegistration[] {
   return Array.from(dispatchMiddlewareRegistry.values()).sort((a, b) => {
-    return b.priority - a.priority; // Higher priority first
+    return STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage]; // Earlier stages first
   });
 }
 
@@ -221,16 +164,16 @@ export function clearRegisteredDispatchMiddlewares(): void {
  * Attaches metadata to a middleware function.
  *
  * This helper function adds __metadata property to a middleware, allowing
- * the sort function to read the priority correctly.
+ * the sort function to read the stage correctly.
  *
  * @param middleware - The middleware function to attach metadata to
- * @param registration - The registration object containing name and priority
+ * @param registration - The registration object containing name and stage
  * @returns The middleware with __metadata attached
  */
-function attachMetadata(middleware: DispatchMiddleware, registration: { name: string; priority: number }): DispatchMiddleware {
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+function attachMetadata(middleware: DispatchMiddleware, registration: { name: string; stage: PipelineStage }): DispatchMiddleware {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name: registration.name,
-    priority: registration.priority,
+    stage: registration.stage,
   };
   return middleware;
 }
@@ -238,13 +181,13 @@ function attachMetadata(middleware: DispatchMiddleware, registration: { name: st
 /**
  * Composes all dispatch middlewares including registered custom middlewares.
  *
- * Returns middlewares sorted by priority (highest first), including:
+ * Returns middlewares sorted by stage (pre-validation first, notification last), including:
  * - Built-in middlewares (idempotency, budget-ceiling, merge-guard, etc.)
  * - Custom middlewares registered via registerDispatchMiddleware()
  *
  * Disabled middlewares are filtered out of the result.
  *
- * @returns An array of enabled DispatchMiddleware functions sorted by priority
+ * @returns An array of enabled DispatchMiddleware functions sorted by stage
  *
  * @example
  * ```typescript
@@ -254,52 +197,52 @@ function attachMetadata(middleware: DispatchMiddleware, registration: { name: st
 export function composeDispatchMiddlewares(): DispatchMiddleware[] {
   // Get built-in middlewares
   const builtInMiddlewares = [
-    createIdempotencyMiddleware(),      // 100
-    createValidationMiddleware(),       // 98
-    createBudgetCeilingMiddleware(),    // 95
-    createMergeGuardMiddleware(),       // 90
-    createUatDispatchMiddleware(),      // 85
-    createReassessmentMiddleware(),     // 80
-    createPhaseDispatchMiddleware(),    // 75
-    createCodeReviewMiddleware(),       // 70
-    createMetricsMiddleware(),          // 65
-    createObservabilityMiddleware(),    // 60
-    createNotificationsMiddleware(),    // 55
+    createIdempotencyMiddleware(),      // pre-validation
+    createValidationMiddleware(),       // validation
+    createBudgetCeilingMiddleware(),    // pre-dispatch
+    createMergeGuardMiddleware(),       // pre-dispatch
+    createUatDispatchMiddleware(),      // dispatch
+    createReassessmentMiddleware(),     // dispatch
+    createPhaseDispatchMiddleware(),    // dispatch
+    createCodeReviewMiddleware(),       // dispatch
+    createMetricsMiddleware(),          // post-dispatch
+    createObservabilityMiddleware(),    // post-dispatch
+    createNotificationsMiddleware(),    // notification
   ];
 
   // Get registered custom middlewares (only enabled ones) and attach metadata
   const customMiddlewares = getRegisteredDispatchMiddlewares()
     .filter(reg => reg.enabled)
-    .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, priority: reg.priority }));
+    .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, stage: reg.stage }));
 
   // Combine all middlewares
   const allMiddlewares = [...builtInMiddlewares, ...customMiddlewares];
 
-  // Sort by priority (highest first)
+  // Sort by stage (earlier stages first)
   return allMiddlewares.sort((a, b) => {
-    const priorityA = (a as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    const priorityB = (b as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    return priorityB - priorityA;
+    const stageA = (a as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
+    const stageB = (b as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
+    return STAGE_ORDER[stageA] - STAGE_ORDER[stageB];
   });
 }
 
 // ─── Compose Function with Preferences ─────────────────────────────────────
 
 /**
- * Default priorities for built-in middlewares.
+ * Default stages for built-in middlewares.
  */
-const DEFAULT_MIDDLEWARE_PRIORITIES: Record<string, number> = {
-  idempotency: 100,
-  validation: 98,
-  "budget-ceiling": 95,
-  "merge-guard": 90,
-  "uat-dispatch": 85,
-  reassessment: 80,
-  "phase-dispatch": 75,
-  "code-review": 70,
-  metrics: 65,
-  observability: 60,
-  notifications: 55,
+const DEFAULT_MIDDLEWARE_STAGES: Record<string, PipelineStage> = {
+  idempotency: "pre-validation",
+  validation: "validation",
+  "budget-ceiling": "pre-dispatch",
+  "merge-guard": "pre-dispatch",
+  "uat-dispatch": "dispatch",
+  reassessment: "dispatch",
+  "phase-dispatch": "dispatch",
+  "code-review": "dispatch",
+  metrics: "post-dispatch",
+  observability: "post-dispatch",
+  notifications: "notification",
 };
 
 /**
@@ -307,14 +250,14 @@ const DEFAULT_MIDDLEWARE_PRIORITIES: Record<string, number> = {
  *
  * This function allows configuring middlewares via preferences.md, supporting:
  * - Enabling/disabling individual middlewares
- * - Overriding middleware priorities
+ * - Overriding middleware stages
  * - Merging global and project preferences
  *
  * If no middleware configuration is provided, all built-in middlewares are
- * returned with their default priorities.
+ * returned with their default stages.
  *
  * @param prefs - GSD preferences containing optional middleware configuration
- * @returns An array of enabled DispatchMiddleware functions sorted by priority
+ * @returns An array of enabled DispatchMiddleware functions sorted by stage
  *
  * @example
  * ```typescript
@@ -329,9 +272,9 @@ const DEFAULT_MIDDLEWARE_PRIORITIES: Record<string, number> = {
  *   middleware:
  *     enabled:
  *       - name: idempotency
- *         priority: 100
+ *         stage: pre-validation
  *       - name: budget-ceiling
- *         priority: 95
+ *         stage: pre-dispatch
  *     disabled:
  *       - uat-dispatch
  * ```
@@ -345,16 +288,17 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
     return composeDispatchMiddlewares();
   }
 
-  // Build a map of enabled middlewares with their priorities
-  const enabledMap = new Map<string, number>();
+  // Build a map of enabled middlewares with their stages
+  const enabledMap = new Map<string, PipelineStage>();
   const disabledSet = new Set<string>();
 
   // Process enabled middlewares
   if (middlewarePrefs.enabled && middlewarePrefs.enabled.length > 0) {
     for (const entry of middlewarePrefs.enabled) {
       if (!entry.name) continue;
-      const priority = entry.priority ?? DEFAULT_MIDDLEWARE_PRIORITIES[entry.name] ?? 50;
-      enabledMap.set(entry.name, priority);
+      // Use the stage value if provided, otherwise use default
+      const stage = entry.stage ?? DEFAULT_MIDDLEWARE_STAGES[entry.name] ?? "dispatch";
+      enabledMap.set(entry.name, stage);
     }
   }
 
@@ -380,58 +324,58 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
     return true;
   }
 
-  // Helper to get priority for a middleware
-  function getPriority(name: string): number {
-    return enabledMap.get(name) ?? DEFAULT_MIDDLEWARE_PRIORITIES[name] ?? 50;
+  // Helper to get stage for a middleware
+  function getStage(name: string): PipelineStage {
+    return enabledMap.get(name) ?? DEFAULT_MIDDLEWARE_STAGES[name] ?? "dispatch";
   }
 
   // Create each middleware if it should be included
   if (shouldInclude("idempotency")) {
-    middlewares.push(createIdempotencyMiddleware({ priority: getPriority("idempotency"), enabled: true }));
+    middlewares.push(createIdempotencyMiddleware({ stage: getStage("idempotency"), enabled: true }));
   }
   if (shouldInclude("validation")) {
-    middlewares.push(createValidationMiddleware({ priority: getPriority("validation"), enabled: true }));
+    middlewares.push(createValidationMiddleware({ stage: getStage("validation"), enabled: true }));
   }
   if (shouldInclude("budget-ceiling")) {
-    middlewares.push(createBudgetCeilingMiddleware({ priority: getPriority("budget-ceiling"), enabled: true }));
+    middlewares.push(createBudgetCeilingMiddleware({ stage: getStage("budget-ceiling"), enabled: true }));
   }
   if (shouldInclude("merge-guard")) {
-    middlewares.push(createMergeGuardMiddleware({ priority: getPriority("merge-guard"), enabled: true }));
+    middlewares.push(createMergeGuardMiddleware({ stage: getStage("merge-guard"), enabled: true }));
   }
   if (shouldInclude("uat-dispatch")) {
-    middlewares.push(createUatDispatchMiddleware({ priority: getPriority("uat-dispatch"), enabled: true }));
+    middlewares.push(createUatDispatchMiddleware({ stage: getStage("uat-dispatch"), enabled: true }));
   }
   if (shouldInclude("reassessment")) {
-    middlewares.push(createReassessmentMiddleware({ priority: getPriority("reassessment"), enabled: true }));
+    middlewares.push(createReassessmentMiddleware({ stage: getStage("reassessment"), enabled: true }));
   }
   if (shouldInclude("phase-dispatch")) {
-    middlewares.push(createPhaseDispatchMiddleware({ priority: getPriority("phase-dispatch"), enabled: true }));
+    middlewares.push(createPhaseDispatchMiddleware({ stage: getStage("phase-dispatch"), enabled: true }));
   }
   if (shouldInclude("code-review")) {
-    middlewares.push(createCodeReviewMiddleware({ priority: getPriority("code-review"), enabled: true }));
+    middlewares.push(createCodeReviewMiddleware({ stage: getStage("code-review"), enabled: true }));
   }
   if (shouldInclude("metrics")) {
-    middlewares.push(createMetricsMiddleware({ priority: getPriority("metrics"), enabled: true }));
+    middlewares.push(createMetricsMiddleware({ stage: getStage("metrics"), enabled: true }));
   }
   if (shouldInclude("observability")) {
-    middlewares.push(createObservabilityMiddleware({ priority: getPriority("observability"), enabled: true }));
+    middlewares.push(createObservabilityMiddleware({ stage: getStage("observability"), enabled: true }));
   }
   if (shouldInclude("notifications")) {
-    middlewares.push(createNotificationsMiddleware({ priority: getPriority("notifications"), enabled: true }));
+    middlewares.push(createNotificationsMiddleware({ stage: getStage("notifications"), enabled: true }));
   }
 
   // Add registered custom middlewares (only enabled ones)
   const customMiddlewares = getRegisteredDispatchMiddlewares()
     .filter(reg => reg.enabled && !disabledSet.has(reg.name) && (!useEnabledList || enabledMap.has(reg.name)))
-    .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, priority: reg.priority }));
+    .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, stage: reg.stage }));
 
   // Combine all middlewares
   const allMiddlewares = [...middlewares, ...customMiddlewares];
 
-  // Sort by priority (highest first)
+  // Sort by stage (earlier stages first)
   return allMiddlewares.sort((a, b) => {
-    const priorityA = (a as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    const priorityB = (b as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority ?? 50;
-    return priorityB - priorityA;
+    const stageA = (a as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
+    const stageB = (b as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
+    return STAGE_ORDER[stageA] - STAGE_ORDER[stageB];
   });
 }

@@ -1,12 +1,13 @@
 // GSD Extension — UAT Dispatch Middleware
 // Dispatches UAT after complete-slice merge, before reassessment.
-// This middleware runs at Priority 85, checking if UAT needs to run and dispatching the run-uat unit.
+// This middleware runs in the "dispatch" stage.
 
 import type {
   DispatchContext,
   DispatchDecision,
   MiddlewareConfig,
   DispatchMiddleware,
+  PipelineStage,
 } from "./types.js";
 import { loadEffectiveGSDPreferences } from "../preferences.js";
 import { resolveSliceFile, relSliceFile } from "../paths.js";
@@ -16,11 +17,10 @@ import { checkNeedsRunUat, buildRunUatPrompt } from "../auto.js";
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /**
- * Default priority for UAT dispatch middleware.
- * Priority 85 — runs after budget ceiling (95) and idempotency (100),
- * but before other dispatch middleware.
+ * Default pipeline stage for UAT dispatch middleware.
+ * Runs in the "dispatch" stage for core dispatch logic.
  */
-const DEFAULT_PRIORITY = 85;
+const DEFAULT_STAGE: PipelineStage = "dispatch";
 
 // ─── Middleware Factory ────────────────────────────────────────────────────
 
@@ -32,20 +32,20 @@ const DEFAULT_PRIORITY = 85;
  * If no UAT is needed, it passes through to the next middleware.
  *
  * @param config - Optional configuration for the middleware
- * @param config.priority - Priority of the middleware (default: 85)
+ * @param config.stage - Pipeline stage of the middleware (default: "dispatch")
  * @param config.enabled - Whether the middleware is enabled (default: true)
  * @param config.name - Name of the middleware (default: "uat-dispatch")
  * @returns A DispatchMiddleware function
  *
  * @example
  * ```typescript
- * const middleware = createUatDispatchMiddleware({ priority: 85 });
+ * const middleware = createUatDispatchMiddleware({ stage: "dispatch" });
  * ```
  */
 export function createUatDispatchMiddleware(
   config?: Partial<MiddlewareConfig>,
 ): DispatchMiddleware {
-  const priority = config?.priority ?? DEFAULT_PRIORITY;
+  const stage = config?.stage ?? DEFAULT_STAGE;
   const enabled = config?.enabled ?? true;
   const name = config?.name ?? "uat-dispatch";
 
@@ -121,9 +121,9 @@ export function createUatDispatchMiddleware(
   };
 
   // Attach metadata for identification
-  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: PipelineStage } }).__metadata = {
     name,
-    priority,
+    stage,
   };
 
   return middleware;

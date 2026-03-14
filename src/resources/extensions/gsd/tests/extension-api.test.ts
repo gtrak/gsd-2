@@ -7,7 +7,6 @@ import {
   clearRegisteredDispatchMiddlewares,
   composeDispatchMiddlewares,
   composeDispatchMiddlewaresWithPreferences,
-  composeDispatchMiddlewaresWithConfig,
 } from "../middleware/index.js";
 import type {
   DispatchContext,
@@ -17,6 +16,7 @@ import type {
   MiddlewareFactory,
   DispatchMiddlewareRegistration,
   GSDMiddleware,
+  PipelineStage,
 } from "../middleware/index.js";
 import type { HookContext } from "../hooks.js";
 import {
@@ -126,7 +126,6 @@ console.log("=== Test 1: all middleware registration functions are exported ==="
   assertTypeIsFunction(clearRegisteredDispatchMiddlewares, "clearRegisteredDispatchMiddlewares should be a function");
   assertTypeIsFunction(composeDispatchMiddlewares, "composeDispatchMiddlewares should be a function");
   assertTypeIsFunction(composeDispatchMiddlewaresWithPreferences, "composeDispatchMiddlewaresWithPreferences should be a function");
-  assertTypeIsFunction(composeDispatchMiddlewaresWithConfig, "composeDispatchMiddlewaresWithConfig should be a function");
 }
 
 // Test 2: all middleware types are exported
@@ -144,7 +143,7 @@ console.log("\n=== Test 2: all middleware types are exported ===");
     return typeof mw === "function";
   }
   function acceptsMiddlewareConfig(config: MiddlewareConfig): boolean {
-    return config.priority !== undefined;
+    return config.stage !== undefined;
   }
   function acceptsMiddlewareFactory(factory: MiddlewareFactory): boolean {
     return typeof factory === "function";
@@ -174,7 +173,7 @@ console.log("\n=== Test 3: extension author can import and use registerDispatchM
   // Simulate extension author registering a middleware
   registerDispatchMiddleware({
     name: "extension-test-middleware",
-    priority: 85,
+    stage: "dispatch",
     enabled: true,
     middleware: async (ctx: DispatchContext, next) => {
       // Extension author's custom logic
@@ -185,7 +184,7 @@ console.log("\n=== Test 3: extension author can import and use registerDispatchM
   const registered = getRegisteredDispatchMiddlewares();
   assertEq(registered.length, 1, "should have 1 registered middleware");
   assertEq(registered[0].name, "extension-test-middleware", "middleware name should match");
-  assertEq(registered[0].priority, 85, "middleware priority should match");
+  assertEq(registered[0].stage, "dispatch", "middleware stage should match");
   assertEq(registered[0].enabled, true, "middleware should be enabled");
 }
 
@@ -206,7 +205,7 @@ console.log("\n=== Test 4: extension author can create custom DispatchMiddleware
 
   registerDispatchMiddleware({
     name: "custom-decision-middleware",
-    priority: 90,
+    stage: "pre-dispatch",
     enabled: true,
     middleware: customMiddleware,
   });
@@ -311,11 +310,6 @@ console.log("\n=== Test 7: compose functions are exported ===");
   const prefs: any = {};
   const middlewaresWithPrefs = composeDispatchMiddlewaresWithPreferences(prefs);
   assert(Array.isArray(middlewaresWithPrefs), "composeDispatchMiddlewaresWithPreferences should return an array");
-
-  // Test composeDispatchMiddlewaresWithConfig
-  const config: any = {};
-  const middlewaresWithConfig = composeDispatchMiddlewaresWithConfig(config);
-  assert(Array.isArray(middlewaresWithConfig), "composeDispatchMiddlewaresWithConfig should return an array");
 }
 
 // Test 8: middleware factory types are accessible
@@ -331,21 +325,21 @@ console.log("\n=== Test 8: middleware factory types are accessible ===");
 
   // Create a simple middleware factory
   const createTestMiddleware: MiddlewareFactory = (config?: Partial<MiddlewareConfig>) => {
-    const priority = config?.priority ?? 50;
+    const stage = config?.stage ?? "dispatch";
     const middleware: DispatchMiddleware = async (ctx, next) => {
       await next();
     };
-    (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+    (middleware as DispatchMiddleware & { __metadata?: { name: string; stage: string } }).__metadata = {
       name: "test-factory-middleware",
-      priority,
+      stage,
     };
     return middleware;
   };
 
-  const middleware = createTestMiddleware({ priority: 75 });
+  const middleware = createTestMiddleware({ stage: "notification" });
   assertNotNull(middleware, "factory should return a middleware");
-  const metadata = (middleware as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata;
-  assertEq(metadata?.priority, 75, "factory should respect config");
+  const metadata = (middleware as DispatchMiddleware & { __metadata?: { stage: string } }).__metadata;
+  assertEq(metadata?.stage, "notification", "factory should respect config");
 }
 
 // Test 9: extension author can use all types together
@@ -363,7 +357,7 @@ console.log("\n=== Test 9: extension author can use all types together ===");
 
   const registration: DispatchMiddlewareRegistration = {
     name: "complete-extension-middleware",
-    priority: 85,
+    stage: "dispatch",
     enabled: true,
     middleware: myMiddleware,
   };
@@ -387,7 +381,7 @@ console.log("\n=== Test 10: GSDMiddleware type can be used with registerDispatch
 
   registerDispatchMiddleware({
     name: "gsd-middleware-extension",
-    priority: 65,
+    stage: "post-dispatch",
     enabled: true,
     middleware: gsdMiddleware,
   });
@@ -395,6 +389,15 @@ console.log("\n=== Test 10: GSDMiddleware type can be used with registerDispatch
   const registered = getRegisteredDispatchMiddlewares();
   assertEq(registered.length, 1, "should have 1 registered middleware");
   assertEq(registered[0].middleware, gsdMiddleware, "GSDMiddleware should be registered");
+}
+
+// Test 11: PipelineStage type is exported
+console.log("\n=== Test 11: PipelineStage type is exported ===");
+{
+  // Type-only verification - PipelineStage should be importable
+  const testStage: PipelineStage = "dispatch";
+  console.log(`✓ PipelineStage type works: ${testStage}`);
+  assert(testStage === "dispatch", "PipelineStage type should accept valid stage values");
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

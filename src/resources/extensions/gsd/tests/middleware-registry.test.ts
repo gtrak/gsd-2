@@ -432,6 +432,91 @@ console.log("\n=== Test 11: GSDMiddleware type can be registered ===");
   assertEq(registered[0].priority, 65, "GSDMiddleware priority should be preserved");
 }
 
+// Test 12: custom middlewares are sorted correctly relative to built-in middlewares
+console.log("\n=== Test 12: custom middlewares are sorted correctly relative to built-in middlewares ===");
+{
+  clearRegisteredDispatchMiddlewares();
+
+  // Register custom middleware at priority 88 (should run after UAT middleware at 85)
+  registerDispatchMiddleware({
+    name: "custom-high-priority",
+    priority: 88,
+    enabled: true,
+    middleware: async (context, next) => {
+      await next();
+    },
+  });
+
+  // Register custom middleware at priority 78 (should run before phase-dispatch at 75)
+  registerDispatchMiddleware({
+    name: "custom-medium-priority",
+    priority: 78,
+    enabled: true,
+    middleware: async (context, next) => {
+      await next();
+    },
+  });
+
+  const composed = composeDispatchMiddlewares();
+
+  // Find positions of middlewares
+  const mergeGuardIndex = composed.findIndex(
+    (m) =>
+      (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
+      "merge-guard",
+  );
+  const customHighIndex = composed.findIndex(
+    (m) =>
+      (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
+      "custom-high-priority",
+  );
+  const uatIndex = composed.findIndex(
+    (m) =>
+      (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
+      "uat-dispatch",
+  );
+  const reassessmentIndex = composed.findIndex(
+    (m) =>
+      (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
+      "reassessment",
+  );
+  const customMediumIndex = composed.findIndex(
+    (m) =>
+      (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
+      "custom-medium-priority",
+  );
+  const phaseDispatchIndex = composed.findIndex(
+    (m) =>
+      (m as DispatchMiddleware & { __metadata?: { name: string } }).__metadata?.name ===
+      "phase-dispatch",
+  );
+
+  // Verify positions exist
+  assert(mergeGuardIndex >= 0, "merge-guard should be in composed list");
+  assert(customHighIndex >= 0, "custom-high-priority should be in composed list");
+  assert(uatIndex >= 0, "uat-dispatch should be in composed list");
+  assert(reassessmentIndex >= 0, "reassessment should be in composed list");
+  assert(customMediumIndex >= 0, "custom-medium-priority should be in composed list");
+  assert(phaseDispatchIndex >= 0, "phase-dispatch should be in composed list");
+
+  // Verify correct ordering:
+  // merge-guard (90) > custom-high-priority (88) > uat-dispatch (85) > reassessment (80) > custom-medium-priority (78) > phase-dispatch (75)
+  assert(mergeGuardIndex < customHighIndex, "merge-guard (90) should come before custom-high-priority (88)");
+  assert(customHighIndex < uatIndex, "custom-high-priority (88) should come before uat-dispatch (85)");
+  assert(uatIndex < reassessmentIndex, "uat-dispatch (85) should come before reassessment (80)");
+  assert(reassessmentIndex < customMediumIndex, "reassessment (80) should come before custom-medium-priority (78)");
+  assert(customMediumIndex < phaseDispatchIndex, "custom-medium-priority (78) should come before phase-dispatch (75)");
+
+  // Verify the priority metadata is correctly attached
+  const customHighMiddleware = composed[customHighIndex];
+  const customHighPriority = (customHighMiddleware as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority;
+  assertEq(customHighPriority, 88, "custom-high-priority middleware should have priority 88");
+
+  const customMediumMiddleware = composed[customMediumIndex];
+  const customMediumPriority = (customMediumMiddleware as DispatchMiddleware & { __metadata?: { priority: number } }).__metadata?.priority;
+  assertEq(customMediumPriority, 78, "custom-medium-priority middleware should have priority 78");
+}
+
 // ─── Summary ────────────────────────────────────────────────────────────────
 
 console.log("\n" + "=".repeat(70));

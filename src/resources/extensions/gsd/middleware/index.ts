@@ -199,6 +199,24 @@ export function clearRegisteredDispatchMiddlewares(): void {
 // ─── Compose Function with Custom Middlewares ───────────────────────────────
 
 /**
+ * Attaches metadata to a middleware function.
+ *
+ * This helper function adds __metadata property to a middleware, allowing
+ * the sort function to read the priority correctly.
+ *
+ * @param middleware - The middleware function to attach metadata to
+ * @param registration - The registration object containing name and priority
+ * @returns The middleware with __metadata attached
+ */
+function attachMetadata(middleware: DispatchMiddleware, registration: { name: string; priority: number }): DispatchMiddleware {
+  (middleware as DispatchMiddleware & { __metadata?: { name: string; priority: number } }).__metadata = {
+    name: registration.name,
+    priority: registration.priority,
+  };
+  return middleware;
+}
+
+/**
  * Composes all dispatch middlewares including registered custom middlewares.
  *
  * Returns middlewares sorted by priority (highest first), including:
@@ -227,10 +245,10 @@ export function composeDispatchMiddlewares(): DispatchMiddleware[] {
     createObservabilityMiddleware(),    // 60
   ];
 
-  // Get registered custom middlewares (only enabled ones)
+  // Get registered custom middlewares (only enabled ones) and attach metadata
   const customMiddlewares = getRegisteredDispatchMiddlewares()
     .filter(reg => reg.enabled)
-    .map(reg => reg.middleware as DispatchMiddleware);
+    .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, priority: reg.priority }));
 
   // Combine all middlewares
   const allMiddlewares = [...builtInMiddlewares, ...customMiddlewares];

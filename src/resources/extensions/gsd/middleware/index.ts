@@ -16,6 +16,7 @@ export type {
   GSDMiddleware,
 } from "./types.js";
 export type { NotificationsConfig } from "./notifications.js";
+export type { ValidationConfig, ValidatorConfig, ValidatorFunction, ValidationResult, ValidationResults } from "./validation.js";
 
 // ─── Middleware Factory Exports ────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ export { createCodeReviewMiddleware } from "./code-review.js";
 export { createObservabilityMiddleware } from "./observability.js";
 export { createMetricsMiddleware } from "./metrics.js";
 export { createNotificationsMiddleware } from "./notifications.js";
+export { createValidationMiddleware } from "./validation.js";
 
 // ─── Decision Constant Exports ─────────────────────────────────────────────
 
@@ -39,7 +41,8 @@ export { createNotificationsMiddleware } from "./notifications.js";
  * Export decision constants used by middlewares.
  */
 export { SKIP_DECISION } from "./idempotency.js";
-export { PAUSE_DECISION } from "./budget-ceiling.js";
+export { PAUSE_DECISION as BUDGET_PAUSE_DECISION } from "./budget-ceiling.js";
+export { PAUSE_DECISION as VALIDATION_PAUSE_DECISION } from "./validation.js";
 export { MERGE_ERROR_DECISION } from "./merge-guard.js";
 
 // ─── Compose Functions ─────────────────────────────────────────────────────
@@ -56,6 +59,7 @@ import { createCodeReviewMiddleware } from "./code-review.js";
 import { createObservabilityMiddleware } from "./observability.js";
 import { createMetricsMiddleware } from "./metrics.js";
 import { createNotificationsMiddleware } from "./notifications.js";
+import { createValidationMiddleware } from "./validation.js";
 
 /**
  * Configuration interface for composing middleware chains with custom options.
@@ -64,6 +68,8 @@ import { createNotificationsMiddleware } from "./notifications.js";
 export interface MiddlewareChainConfig {
   /** Configuration for idempotency middleware (priority 100) */
   idempotency?: Partial<MiddlewareConfig>;
+  /** Configuration for validation middleware (priority 98) */
+  validation?: Partial<MiddlewareConfig>;
   /** Configuration for budget ceiling middleware (priority 95) */
   budgetCeiling?: Partial<MiddlewareConfig>;
   /** Configuration for merge guard middleware (priority 90) */
@@ -106,6 +112,7 @@ export function composeDispatchMiddlewaresWithConfig(
 ): DispatchMiddleware[] {
   const middlewares = [
     createIdempotencyMiddleware(config.idempotency),
+    createValidationMiddleware(config.validation),
     createBudgetCeilingMiddleware(config.budgetCeiling),
     createMergeGuardMiddleware(config.mergeGuard),
     createUatDispatchMiddleware(config.uatDispatch),
@@ -248,6 +255,7 @@ export function composeDispatchMiddlewares(): DispatchMiddleware[] {
   // Get built-in middlewares
   const builtInMiddlewares = [
     createIdempotencyMiddleware(),      // 100
+    createValidationMiddleware(),       // 98
     createBudgetCeilingMiddleware(),    // 95
     createMergeGuardMiddleware(),       // 90
     createUatDispatchMiddleware(),      // 85
@@ -282,6 +290,7 @@ export function composeDispatchMiddlewares(): DispatchMiddleware[] {
  */
 const DEFAULT_MIDDLEWARE_PRIORITIES: Record<string, number> = {
   idempotency: 100,
+  validation: 98,
   "budget-ceiling": 95,
   "merge-guard": 90,
   "uat-dispatch": 85,
@@ -379,6 +388,9 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
   // Create each middleware if it should be included
   if (shouldInclude("idempotency")) {
     middlewares.push(createIdempotencyMiddleware({ priority: getPriority("idempotency"), enabled: true }));
+  }
+  if (shouldInclude("validation")) {
+    middlewares.push(createValidationMiddleware({ priority: getPriority("validation"), enabled: true }));
   }
   if (shouldInclude("budget-ceiling")) {
     middlewares.push(createBudgetCeilingMiddleware({ priority: getPriority("budget-ceiling"), enabled: true }));

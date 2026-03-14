@@ -219,8 +219,8 @@ console.log("\n=== Test 4: composeDispatchMiddlewares includes registered custom
 
   const composed = composeDispatchMiddlewares();
 
-  // Should have 10 built-in + 1 custom = 11 middlewares
-  assertEq(composed.length, 11, "should have 11 middlewares (10 built-in + 1 custom)");
+  // Should have 11 built-in + 1 custom = 12 middlewares
+  assertEq(composed.length, 12, "should have 12 middlewares (11 built-in + 1 custom)");
 
   // Find the custom middleware in the composed list
   const customMiddleware = composed.find(
@@ -254,8 +254,8 @@ console.log("\n=== Test 5: disabled middlewares are filtered out ===");
 
   const composed = composeDispatchMiddlewares();
 
-  // Should have 10 built-in + 1 enabled = 11 middlewares (disabled filtered out)
-  assertEq(composed.length, 11, "should have 11 middlewares (disabled filtered out)");
+  // Should have 11 built-in + 1 enabled = 12 middlewares (disabled filtered out)
+  assertEq(composed.length, 12, "should have 12 middlewares (disabled filtered out)");
 
   // Verify enabled middleware is present
   const enabledMiddleware = composed.find(
@@ -293,7 +293,7 @@ console.log("\n=== Test 6: backward compatibility - existing middleware factorie
 
   // Test that composeDispatchMiddlewares returns the expected built-in middlewares
   const composed = composeDispatchMiddlewares();
-  assertEq(composed.length, 10, "should have 10 built-in middlewares");
+  assertEq(composed.length, 11, "should have 11 built-in middlewares");
 
   // Verify expected priorities
   const priorities = composed.map(
@@ -302,15 +302,16 @@ console.log("\n=== Test 6: backward compatibility - existing middleware factorie
   );
 
   assertEq(priorities[0], 100, "first middleware should have priority 100 (idempotency)");
-  assertEq(priorities[1], 95, "second middleware should have priority 95 (budget-ceiling)");
-  assertEq(priorities[2], 90, "third middleware should have priority 90 (merge-guard)");
-  assertEq(priorities[3], 85, "fourth middleware should have priority 85 (uat-dispatch)");
-  assertEq(priorities[4], 80, "fifth middleware should have priority 80 (reassessment)");
-  assertEq(priorities[5], 75, "sixth middleware should have priority 75 (phase-dispatch)");
-  assertEq(priorities[6], 70, "seventh middleware should have priority 70 (code-review)");
-  assertEq(priorities[7], 65, "eighth middleware should have priority 65 (metrics)");
-  assertEq(priorities[8], 60, "ninth middleware should have priority 60 (observability)");
-  assertEq(priorities[9], 55, "tenth middleware should have priority 55 (notifications)");
+  assertEq(priorities[1], 98, "second middleware should have priority 98 (validation)");
+  assertEq(priorities[2], 95, "third middleware should have priority 95 (budget-ceiling)");
+  assertEq(priorities[3], 90, "fourth middleware should have priority 90 (merge-guard)");
+  assertEq(priorities[4], 85, "fifth middleware should have priority 85 (uat-dispatch)");
+  assertEq(priorities[5], 80, "sixth middleware should have priority 80 (reassessment)");
+  assertEq(priorities[6], 75, "seventh middleware should have priority 75 (phase-dispatch)");
+  assertEq(priorities[7], 70, "eighth middleware should have priority 70 (code-review)");
+  assertEq(priorities[8], 65, "ninth middleware should have priority 65 (metrics)");
+  assertEq(priorities[9], 60, "tenth middleware should have priority 60 (observability)");
+  assertEq(priorities[10], 55, "eleventh middleware should have priority 55 (notifications)");
 }
 
 // Test 7: registerDispatchMiddleware defaults priority to 50

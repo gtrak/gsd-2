@@ -284,21 +284,22 @@ console.log("\n=== Test 9: composeDispatchMiddlewaresWithPreferences uses defaul
   const prefs: GSDPreferences = {};
   const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
 
-  // Should have all 10 default middlewares
-  assertArrayLength(middlewares, 10, "should have 10 default middlewares");
+  // Should have all 11 default middlewares
+  assertArrayLength(middlewares, 11, "should have 11 default middlewares");
 
   // Verify expected priorities
   const priorities = middlewares.map(m => (m as any).__metadata?.priority);
   assertEq(priorities[0], 100, "first middleware should have priority 100 (idempotency)");
-  assertEq(priorities[1], 95, "second middleware should have priority 95 (budget-ceiling)");
-  assertEq(priorities[2], 90, "third middleware should have priority 90 (merge-guard)");
-  assertEq(priorities[3], 85, "fourth middleware should have priority 85 (uat-dispatch)");
-  assertEq(priorities[4], 80, "fifth middleware should have priority 80 (reassessment)");
-  assertEq(priorities[5], 75, "sixth middleware should have priority 75 (phase-dispatch)");
-  assertEq(priorities[6], 70, "seventh middleware should have priority 70 (code-review)");
-  assertEq(priorities[7], 65, "eighth middleware should have priority 65 (metrics)");
-  assertEq(priorities[8], 60, "ninth middleware should have priority 60 (observability)");
-  assertEq(priorities[9], 55, "tenth middleware should have priority 55 (notifications)");
+  assertEq(priorities[1], 98, "second middleware should have priority 98 (validation)");
+  assertEq(priorities[2], 95, "third middleware should have priority 95 (budget-ceiling)");
+  assertEq(priorities[3], 90, "fourth middleware should have priority 90 (merge-guard)");
+  assertEq(priorities[4], 85, "fifth middleware should have priority 85 (uat-dispatch)");
+  assertEq(priorities[5], 80, "sixth middleware should have priority 80 (reassessment)");
+  assertEq(priorities[6], 75, "seventh middleware should have priority 75 (phase-dispatch)");
+  assertEq(priorities[7], 70, "eighth middleware should have priority 70 (code-review)");
+  assertEq(priorities[8], 65, "ninth middleware should have priority 65 (metrics)");
+  assertEq(priorities[9], 60, "tenth middleware should have priority 60 (observability)");
+  assertEq(priorities[10], 55, "eleventh middleware should have priority 55 (notifications)");
 }
 
 // Test 10: composeDispatchMiddlewaresWithPreferences merges global and project prefs

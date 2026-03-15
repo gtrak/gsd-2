@@ -83,7 +83,6 @@ import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { makeUI, GLYPH, INDENT } from "../shared/ui.js";
 import { showNextAction } from "../shared/next-action-ui.js";
 import { createTaskLifecycleMiddleware } from "./task-lifecycle-hook.js";
-import { executeMiddlewareChain } from "./hooks.js";
 import { composeDispatchMiddlewares, composeDispatchMiddlewaresWithPreferences, registerDispatchMiddleware, clearRegisteredDispatchMiddlewares, getRegisteredDispatchMiddlewares } from "./middleware/index.js";
 import type { DispatchContext, DispatchDecision } from "./middleware/types.js";
 
@@ -1568,71 +1567,10 @@ async function dispatchNextUnit(
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Backward Compatibility - Execute existing hook chain
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // Execute middleware chain to allow hooks to modify state (backward compatibility)
-  const hookContext = await executeMiddlewareChain(state, {
-    basePath,
-    pi,
-    ctx,
-    state,
-    resolveTaskFile: (filename: string): string | null => {
-      const mid = state.activeMilestone?.id;
-      const sid = state.activeSlice?.id;
-      const tid = state.activeTask?.id;
-      if (!mid || !sid || !tid) return null;
-      return resolveTaskFile(basePath, mid, sid, tid, filename.replace(/\.md$/, "").toUpperCase());
-    },
-    resolveSliceFile: (filename: string): string | null => {
-      const mid = state.activeMilestone?.id;
-      const sid = state.activeSlice?.id;
-      if (!mid || !sid) return null;
-      return resolveSliceFile(basePath, mid, sid, filename.replace(/\.md$/, "").toUpperCase());
-    },
-    resolveMilestoneFile: (filename: string): string | null => {
-      const mid = state.activeMilestone?.id;
-      if (!mid) return null;
-      return resolveMilestoneFile(basePath, mid, filename.replace(/\.md$/, "").toUpperCase());
-    },
-  });
-
-  // Check if a hook made a dispatch decision (backward compatibility)
-  if (hookContext.decision) {
-    ctx.ui.notify(
-      `Hook "${hookContext.decision.unitType}" override: ${hookContext.decision.unitId}`,
-      "info"
-    );
-
-    const unitType = hookContext.decision.unitType;
-    const unitId = hookContext.decision.unitId;
-    const prompt = hookContext.decision.prompt;
-    const hookMetadata = hookContext.decision.metadata;
-
-    // Emit observability warnings for the hook's chosen unit
-    await emitObservabilityWarnings(ctx, unitType, unitId);
-
-    // Idempotency check for hook decision
-    const idempotencyKey = `${unitType}/${unitId}`;
-    if (completedKeySet.has(idempotencyKey)) {
-      ctx.ui.notify(
-        `Skipping ${unitType} ${unitId} — already completed (hook decision).`,
-        "info"
-      );
-      await dispatchNextUnit(ctx, pi);
-      return;
-    }
-
-    // Continue with dispatch
-    continueWithDispatch(ctx, pi, unitType, unitId, prompt, hookMetadata, mid, midTitle, state);
-    return;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
   // Final Fallback - No decision made
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // If neither middleware nor hooks made a decision, stop auto-mode with error
+  // If middleware did not make a decision, stop auto-mode with error
   if (currentUnit) {
     const modelId = ctx.model?.id ?? "unknown";
     snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
@@ -1640,7 +1578,7 @@ async function dispatchNextUnit(
   }
   await stopAuto(ctx, pi);
   ctx.ui.notify(
-    `No dispatch decision made for phase: ${state.phase}. Middleware and hooks did not produce a decision. Stopping auto-mode.`,
+    `No dispatch decision made for phase: ${state.phase}. Middleware did not produce a decision. Stopping auto-mode.`,
     "error"
   );
 }

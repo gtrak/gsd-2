@@ -15,17 +15,8 @@ import type {
   MiddlewareConfig,
   MiddlewareFactory,
   DispatchMiddlewareRegistration,
-  GSDMiddleware,
   PipelineStage,
 } from "../middleware/index.js";
-import type { HookContext } from "../hooks.js";
-import {
-  registerHook,
-  getRegisteredHooks,
-  clearRegisteredHooks,
-  type HookRegistration,
-} from "../hooks.js";
-
 // ─── Test Counters ──────────────────────────────────────────────────────────
 
 let passed = 0;
@@ -151,9 +142,6 @@ console.log("\n=== Test 2: all middleware types are exported ===");
   function acceptsDispatchMiddlewareRegistration(reg: DispatchMiddlewareRegistration): boolean {
     return reg.name !== undefined;
   }
-  function acceptsGSDMiddleware(mw: GSDMiddleware): boolean {
-    return typeof mw === "function";
-  }
 
   // Test that the functions accept the types
   assert(typeof acceptsDispatchContext === "function", "DispatchContext type should be accessible");
@@ -162,7 +150,6 @@ console.log("\n=== Test 2: all middleware types are exported ===");
   assert(typeof acceptsMiddlewareConfig === "function", "MiddlewareConfig type should be accessible");
   assert(typeof acceptsMiddlewareFactory === "function", "MiddlewareFactory type should be accessible");
   assert(typeof acceptsDispatchMiddlewareRegistration === "function", "DispatchMiddlewareRegistration type should be accessible");
-  assert(typeof acceptsGSDMiddleware === "function", "GSDMiddleware type should be accessible");
 }
 
 // Test 3: extension author can import and use registerDispatchMiddleware
@@ -224,81 +211,7 @@ console.log("\n=== Test 4: extension author can create custom DispatchMiddleware
   assert(nextWasCalled, "next function should have been called");
 }
 
-// Test 5: extension author can access HookContext type
-console.log("\n=== Test 5: extension author can access HookContext type ===");
-{
-  // HookContext type should be accessible for extension authors
-  // Verify by using the type in a function signature
-  function acceptsHookContext(ctx: HookContext): boolean {
-    return ctx.basePath !== undefined;
-  }
-
-  assert(typeof acceptsHookContext === "function", "HookContext type should be accessible");
-
-  // Verify HookContext has expected properties by using it
-  const mockHookContext: HookContext = {
-    basePath: "/test",
-    pi: {} as any,
-    ctx: {} as any,
-    state: {
-      activeMilestone: { id: "M001", title: "Test" },
-      activeSlice: { id: "S01", title: "Test" },
-      activeTask: { id: "T01", title: "Test" },
-      phase: "executing",
-      recentDecisions: [],
-      blockers: [],
-      nextAction: "test",
-      registry: [],
-      extensions: {},
-    },
-    workingState: {
-      activeMilestone: { id: "M001", title: "Test" },
-      activeSlice: { id: "S01", title: "Test" },
-      activeTask: { id: "T01", title: "Test" },
-      phase: "executing",
-      recentDecisions: [],
-      blockers: [],
-      nextAction: "test",
-      registry: [],
-      extensions: {},
-    },
-    getExtensionData: () => undefined,
-    setExtensionData: () => {},
-    resolveTaskFile: () => null,
-    resolveSliceFile: () => null,
-    resolveMilestoneFile: () => null,
-  };
-
-  assertNotNull(mockHookContext.basePath, "HookContext should have basePath");
-  assertNotNull(mockHookContext.state, "HookContext should have state");
-  assertNotNull(mockHookContext.workingState, "HookContext should have workingState");
-}
-
-// Test 6: registerHook is still available for backward compatibility
-console.log("\n=== Test 6: registerHook is still available for backward compatibility ===");
-{
-  clearRegisteredHooks();
-
-  // registerHook should still be available
-  assertTypeIsFunction(registerHook, "registerHook should be a function");
-  assertTypeIsFunction(getRegisteredHooks, "getRegisteredHooks should be a function");
-  assertTypeIsFunction(clearRegisteredHooks, "clearRegisteredHooks should be a function");
-
-  // Test that registerHook still works
-  registerHook({
-    name: "backward-compat-hook",
-    middleware: async (ctx, next) => {
-      await next();
-    },
-    priority: 50,
-  });
-
-  const hooks = getRegisteredHooks();
-  assertEq(hooks.length, 1, "should have 1 registered hook");
-  assertEq(hooks[0].name, "backward-compat-hook", "hook name should match");
-}
-
-// Test 7: compose functions are exported
+// Test 5: compose functions are exported
 console.log("\n=== Test 7: compose functions are exported ===");
 {
   // Test composeDispatchMiddlewares
@@ -369,29 +282,7 @@ console.log("\n=== Test 9: extension author can use all types together ===");
   assertEq(registered[0].name, "complete-extension-middleware", "middleware should be registered");
 }
 
-// Test 10: GSDMiddleware type can be used with registerDispatchMiddleware
-console.log("\n=== Test 10: GSDMiddleware type can be used with registerDispatchMiddleware ===");
-{
-  clearRegisteredDispatchMiddlewares();
-
-  // Extension author creates a GSDMiddleware (uses HookContext)
-  const gsdMiddleware: GSDMiddleware = async (ctx, next) => {
-    await next();
-  };
-
-  registerDispatchMiddleware({
-    name: "gsd-middleware-extension",
-    stage: "post-dispatch",
-    enabled: true,
-    middleware: gsdMiddleware,
-  });
-
-  const registered = getRegisteredDispatchMiddlewares();
-  assertEq(registered.length, 1, "should have 1 registered middleware");
-  assertEq(registered[0].middleware, gsdMiddleware, "GSDMiddleware should be registered");
-}
-
-// Test 11: PipelineStage type is exported
+// Test 10: PipelineStage type is exported
 console.log("\n=== Test 11: PipelineStage type is exported ===");
 {
   // Type-only verification - PipelineStage should be importable

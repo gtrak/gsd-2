@@ -43,16 +43,6 @@ export interface RemoteQuestionsConfig {
   timeout_minutes?: number;        // clamped to 1-30
   poll_interval_seconds?: number;  // clamped to 2-30
 }
-
-export interface HooksPreferences {
-  enabled?: Array<{
-    name: string;
-    priority?: number;
-    config?: Record<string, unknown>;
-  }>;
-  disabled?: string[];
-}
-
 export interface MiddlewarePreferences {
   enabled?: Array<{
     name: string;
@@ -80,7 +70,6 @@ export interface GSDPreferences {
   code_review_max_cycles?: number;
   code_review_model?: string;
   code_review_fix_model?: string;
-  hooks?: HooksPreferences;
   middleware?: MiddlewarePreferences;
 }
 
@@ -623,41 +612,8 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     git: (base.git || override.git)
       ? { ...(base.git ?? {}), ...(override.git ?? {}) }
       : undefined,
-    hooks: mergeHooksPreferences(base.hooks, override.hooks),
     middleware: mergeMiddlewarePreferences(base.middleware, override.middleware),
   };
-}
-
-function mergeHooksPreferences(
-  base?: HooksPreferences,
-  override?: HooksPreferences
-): HooksPreferences | undefined {
-  if (!base && !override) return undefined;
-
-  const result: HooksPreferences = {};
-
-  // Merge enabled hooks - override takes precedence by name
-  const enabledMap = new Map<string, { name: string; priority?: number; config?: Record<string, unknown> }>();
-  for (const entry of base?.enabled ?? []) {
-    if (entry.name) enabledMap.set(entry.name, entry);
-  }
-  for (const entry of override?.enabled ?? []) {
-    if (entry.name) enabledMap.set(entry.name, entry);
-  }
-  if (enabledMap.size > 0) {
-    result.enabled = Array.from(enabledMap.values());
-  }
-
-  // Merge disabled hooks - combine both lists
-  const disabledSet = new Set([
-    ...(base?.disabled ?? []),
-    ...(override?.disabled ?? []),
-  ]);
-  if (disabledSet.size > 0) {
-    result.disabled = Array.from(disabledSet);
-  }
-
-  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function mergeMiddlewarePreferences(

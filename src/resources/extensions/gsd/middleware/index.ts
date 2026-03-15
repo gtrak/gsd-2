@@ -13,7 +13,6 @@ export type {
   MiddlewareConfig,
   MiddlewareFactory,
   DispatchMiddlewareRegistration,
-  GSDMiddleware,
   PipelineStage,
 } from "./types.js";
 export type { NotificationsConfig } from "./notifications.js";
@@ -48,7 +47,7 @@ export { MERGE_ERROR_DECISION } from "./merge-guard.js";
 
 // ─── Compose Functions ─────────────────────────────────────────────────────
 
-import type { DispatchMiddleware, MiddlewareConfig, GSDMiddleware, DispatchMiddlewareRegistration, PipelineStage } from "./types.js";
+import type { DispatchMiddleware, MiddlewareConfig, DispatchMiddlewareRegistration, PipelineStage } from "./types.js";
 import type { GSDPreferences, MiddlewarePreferences } from "../preferences.js";
 import { createIdempotencyMiddleware } from "./idempotency.js";
 import { createBudgetCeilingMiddleware } from "./budget-ceiling.js";
@@ -84,11 +83,11 @@ const STAGE_ORDER: Record<PipelineStage, number> = {
 const dispatchMiddlewareRegistry = new Map<string, DispatchMiddlewareRegistration>();
 
 /**
- * Register a custom dispatch middleware.
- *
- * This function allows registering both DispatchMiddleware and GSDMiddleware
- * types. Later registrations with the same name will overwrite earlier ones.
- *
+  * Register a custom dispatch middleware.
+  *
+  * This function allows registering DispatchMiddleware types. Later registrations
+  * with the same name will overwrite earlier ones.
+  *
  * @param registration - Configuration for the middleware registration
  * @param registration.name - Unique name for the middleware (used for deduplication)
  * @param registration.stage - Pipeline stage of the middleware (default: "dispatch")
@@ -113,7 +112,7 @@ export function registerDispatchMiddleware(registration: {
   name: string;
   stage?: PipelineStage;
   enabled?: boolean;
-  middleware: DispatchMiddleware | GSDMiddleware;
+  middleware: DispatchMiddleware;
 }): void {
   dispatchMiddlewareRegistry.set(registration.name, {
     name: registration.name,

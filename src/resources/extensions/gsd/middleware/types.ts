@@ -1,7 +1,6 @@
 // GSD Extension — Dispatch Middleware Types
 // Types specific to the dispatch middleware system for unit dispatch decisions.
 
-import type { HookContext, GSDMiddleware } from "../hooks.js";
 
 // ─── Pipeline Stage Type ───────────────────────────────────────────────────
 
@@ -51,11 +50,43 @@ export interface DispatchDecision {
 // ─── Dispatch Context ──────────────────────────────────────────────────────
 
 /**
- * Extended HookContext with dispatch-specific helpers for idempotency checks.
+ * Dispatch context with dispatch-specific helpers for idempotency checks.
  * Provides methods to track which units have been completed to prevent
  * duplicate dispatch decisions.
+ *
+ * This interface includes the base context properties that were previously
+ * defined in HookContext (basePath, pi, ctx, state, workingState, decision,
+ * getExtensionData, setExtensionData, resolveTaskFile, resolveSliceFile,
+ * resolveMilestoneFile) plus dispatch-specific extensions.
  */
-export interface DispatchContext extends HookContext {
+export interface DispatchContext {
+  // Immutable inputs
+  readonly basePath: string;
+  readonly pi: any; // ExtensionAPI
+  readonly ctx: any; // ExtensionContext
+
+  // Current state (immutable snapshot)
+  readonly state: any; // GSDState
+
+  // Working state - middleware apply transformations
+  workingState: any; // GSDState
+
+  // Decision override
+  decision?: {
+    unitType: string;
+    unitId: string;
+    prompt: string;
+    metadata?: Record<string, unknown>;
+  };
+
+  // Helper methods
+  getExtensionData: <T>(hookName: string) => T | undefined;
+  setExtensionData: <T>(hookName: string, data: T) => void;
+  resolveTaskFile: (filename: string) => string | null;
+  resolveSliceFile: (filename: string) => string | null;
+  resolveMilestoneFile: (filename: string) => string | null;
+
+  // Dispatch-specific extensions
   /**
    * Set of completed unit keys for idempotency checks.
    * Keys are in the format: "<unitType>:<unitId>"
@@ -90,7 +121,6 @@ export interface DispatchContext extends HookContext {
 
 /**
  * Middleware function type specialized for dispatch operations.
- * Works with DispatchContext instead of the base HookContext.
  */
 export type DispatchMiddleware = (
   context: DispatchContext,
@@ -160,13 +190,12 @@ export interface DispatchMiddlewareRegistration {
   /**
    * The middleware function.
    */
-  middleware: DispatchMiddleware | GSDMiddleware;
+  middleware: DispatchMiddleware;
 }
 
-// ─── Re-exports for Compatibility ───────────────────────────────────────────
+// ─── Legacy Type Aliases ───────────────────────────────────────────────────
 
 /**
- * Re-export GSDMiddleware for compatibility with registration API.
+ * @deprecated Use `DispatchMiddleware` instead. This type alias is kept for backward compatibility.
  */
-export type { GSDMiddleware } from "../hooks.js";
-
+export type GSDMiddleware = DispatchMiddleware;

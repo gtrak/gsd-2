@@ -11,7 +11,6 @@ import type {
   MiddlewareFactory,
   PipelineStage,
 } from "../middleware/types.js";
-import type { HookContext } from "../hooks.js";
 
 // Test counters
 let passed = 0;
@@ -64,12 +63,12 @@ describe("DispatchDecision", () => {
 });
 
 describe("DispatchContext", () => {
-  it("should extend HookContext with dispatch-specific fields", () => {
+  it("should have all necessary fields from legacy HookContext plus dispatch-specific extensions", () => {
     // Verify type compatibility - DispatchContext should be assignable where HookContext is expected
     const createContext = (): DispatchContext => {
       const completedKeySet = new Set<string>();
       return {
-        // HookContext fields (minimal for type checking)
+        // Core context fields (previously defined in HookContext)
         basePath: "/test",
         pi: {} as any,
         ctx: {} as any,
@@ -334,52 +333,6 @@ describe("MiddlewareFactory", () => {
   });
 });
 
-describe("Type Compatibility", () => {
-  it("should verify DispatchContext is compatible with HookContext", () => {
-    // This test verifies that DispatchContext can be used wherever HookContext is expected
-    const acceptsHookContext = (ctx: HookContext): void => {
-      check(ctx.basePath !== undefined, "basePath should be defined");
-      check(ctx.state !== undefined, "state should be defined");
-    };
-
-    const dispatchContext: DispatchContext = {
-      basePath: "/test",
-      pi: {} as any,
-      ctx: {} as any,
-      state: {
-        activeMilestone: null,
-        activeSlice: null,
-        activeTask: null,
-        phase: "executing",
-        recentDecisions: [],
-        blockers: [],
-        nextAction: "",
-        registry: [],
-      },
-      workingState: {
-        activeMilestone: null,
-        activeSlice: null,
-        activeTask: null,
-        phase: "executing",
-        recentDecisions: [],
-        blockers: [],
-        nextAction: "",
-        registry: [],
-      },
-      getExtensionData: () => undefined,
-      setExtensionData: () => {},
-      resolveTaskFile: () => null,
-      resolveSliceFile: () => null,
-      resolveMilestoneFile: () => null,
-      completedKeySet: new Set<string>(),
-      getCompletedKey: () => "",
-      isUnitCompleted: () => false,
-    };
-
-    // DispatchContext should be assignable to HookContext
-    acceptsHookContext(dispatchContext);
-  });
-});
 
 // ─── Test Summary ───────────────────────────────────────────────────────────
 

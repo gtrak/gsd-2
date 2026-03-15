@@ -595,11 +595,5 @@ export type {
   MiddlewareConfig,
   MiddlewareFactory,
   DispatchMiddlewareRegistration,
-  GSDMiddleware,
   PipelineStage,
 } from "./middleware/index.js";
-
-/**
- * Re-export HookContext for extension authors.
- */
-export type { HookContext } from "./hooks.js";

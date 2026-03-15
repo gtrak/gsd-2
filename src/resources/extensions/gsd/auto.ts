@@ -82,9 +82,9 @@ import type { GitPreferences } from "./git-service.ts";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { makeUI, GLYPH, INDENT } from "../shared/ui.js";
 import { showNextAction } from "../shared/next-action-ui.js";
-import { TaskLifecycleHook } from "./task-lifecycle-hook.js";
-import { registerHook, getRegisteredHooks, executeMiddlewareChain } from "./hooks.js";
-import { composeDispatchMiddlewares, composeDispatchMiddlewaresWithPreferences } from "./middleware/index.js";
+import { createTaskLifecycleMiddleware } from "./task-lifecycle-hook.js";
+import { executeMiddlewareChain } from "./hooks.js";
+import { composeDispatchMiddlewares, composeDispatchMiddlewaresWithPreferences, registerDispatchMiddleware, clearRegisteredDispatchMiddlewares, getRegisteredDispatchMiddlewares } from "./middleware/index.js";
 import type { DispatchContext, DispatchDecision } from "./middleware/types.js";
 
 // ─── Disk-backed completed-unit helpers ───────────────────────────────────────
@@ -1463,13 +1463,25 @@ async function dispatchNextUnit(
   // Hook Integration - Execute middleware chain before dispatch
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Register task lifecycle hook if not already registered (backward compatibility)
-  if (getRegisteredHooks().length === 0) {
-    const lifecycleHook = new TaskLifecycleHook(basePath, pi, ctx);
-    registerHook({
+  // Register task lifecycle middleware if not already registered
+  const registeredMiddlewares = getRegisteredDispatchMiddlewares();
+  const taskLifecycleRegistered = registeredMiddlewares.some(
+    (m) => m.name === "task-lifecycle"
+  );
+
+  if (!taskLifecycleRegistered) {
+    registerDispatchMiddleware({
       name: "task-lifecycle",
-      middleware: lifecycleHook.asMiddleware(),
-      priority: 75, // High priority to run early
+      stage: "dispatch",
+      enabled: true,
+      middleware: createTaskLifecycleMiddleware({
+        basePath,
+        pi,
+        ctx,
+        stage: "dispatch",
+        enabled: true,
+        name: "task-lifecycle",
+      }),
     });
   }
 

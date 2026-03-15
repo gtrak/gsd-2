@@ -1,8 +1,9 @@
-// GSD Extension — Task Lifecycle Hook Tests
+// GSD Extension — Task Lifecycle Middleware Tests
 
-import { TaskLifecycleHook, type TaskLifecycleData } from "../task-lifecycle-hook.js";
+import { createTaskLifecycleMiddleware, summarizeMustHaves, type TaskLifecycleData } from "../task-lifecycle-hook.js";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { GSDState } from "../types.js";
+import type { DispatchContext } from "../middleware/types.js";
 import { promises as fs } from "node:fs";
 
 let passed = 0;
@@ -28,32 +29,90 @@ const mockPi = {} as ExtensionAPI;
 const mockCtx = {} as ExtensionContext;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TaskLifecycleHook tests
+// createTaskLifecycleMiddleware tests
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log("\n=== TaskLifecycleHook: asMiddleware returns function ===");
+console.log("\n=== createTaskLifecycleMiddleware: returns function ===");
 {
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const middleware = hook.asMiddleware();
-  assert(typeof middleware === "function", "asMiddleware should return a function");
+  const middleware = createTaskLifecycleMiddleware({ basePath: "/test", pi: mockPi, ctx: mockCtx });
+  assert(typeof middleware === "function", "createTaskLifecycleMiddleware should return a function");
+}
+
+console.log("\n=== createTaskLifecycleMiddleware: disabled middleware is no-op ===");
+{
+  let called = false;
+  const middleware = createTaskLifecycleMiddleware({
+    basePath: "/test",
+    pi: mockPi,
+    ctx: mockCtx,
+    enabled: false,
+  });
+  
+  // Create a minimal mock context
+  const mockContext: DispatchContext = {
+    basePath: "/test",
+    pi: mockPi,
+    ctx: mockCtx,
+    state: {
+      activeMilestone: { id: "M001", title: "Test" },
+      activeSlice: { id: "S01", title: "Test" },
+      activeTask: { id: "T01", title: "Test" },
+      phase: "executing",
+      recentDecisions: [],
+      blockers: [],
+      nextAction: "test",
+      registry: [],
+      extensions: {},
+    },
+    workingState: {
+      activeMilestone: { id: "M001", title: "Test" },
+      activeSlice: { id: "S01", title: "Test" },
+      activeTask: { id: "T01", title: "Test" },
+      phase: "executing",
+      recentDecisions: [],
+      blockers: [],
+      nextAction: "test",
+      registry: [],
+      extensions: {},
+    },
+    getExtensionData: () => undefined,
+    setExtensionData: () => {},
+    resolveTaskFile: () => null,
+    resolveSliceFile: () => null,
+    resolveMilestoneFile: () => null,
+    completedKeySet: new Set(),
+    getCompletedKey: () => "",
+    isUnitCompleted: () => false,
+  };
+
+  await middleware(mockContext, async () => {
+    called = true;
+  });
+  
+  assert(called, "disabled middleware should call next()");
+}
+
+console.log("\n=== createTaskLifecycleMiddleware: middleware has metadata ===");
+{
+  const middleware = createTaskLifecycleMiddleware({ basePath: "/test", pi: mockPi, ctx: mockCtx });
+  const metadata = (middleware as any).__metadata;
+  assertEq(metadata?.name, "task-lifecycle", "middleware should have name metadata");
+  assertEq(metadata?.stage, "dispatch", "middleware should have stage metadata");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// summarizeMustHaves tests (via handleExecuteTask)
+// summarizeMustHaves tests
 // ═══════════════════════════════════════════════════════════════════════════
 
 console.log("\n=== summarizeMustHaves: empty array ===");
 {
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  // Access private method
-  const result = (hook as any).summarizeMustHaves([]);
+  const result = summarizeMustHaves([]);
   assertEq(result, "No must-haves defined.", "should return no must-haves message");
 }
 
 console.log("\n=== summarizeMustHaves: single unchecked ===");
 {
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const result = (hook as any).summarizeMustHaves([
+  const result = summarizeMustHaves([
     { text: "Test item", checked: false },
   ]);
   assert(result.includes("Must-Haves (0/1 checked)"), "should show count");
@@ -63,8 +122,7 @@ console.log("\n=== summarizeMustHaves: single unchecked ===");
 
 console.log("\n=== summarizeMustHaves: checked items ===");
 {
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const result = (hook as any).summarizeMustHaves([
+  const result = summarizeMustHaves([
     { text: "First", checked: true },
     { text: "Second", checked: false },
     { text: "Third", checked: true },
@@ -77,8 +135,7 @@ console.log("\n=== summarizeMustHaves: checked items ===");
 
 console.log("\n=== summarizeMustHaves: all checked ===");
 {
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const result = (hook as any).summarizeMustHaves([
+  const result = summarizeMustHaves([
     { text: "First", checked: true },
     { text: "Second", checked: true },
   ]);
@@ -87,103 +144,156 @@ console.log("\n=== summarizeMustHaves: all checked ===");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// checkSummaryMentionsMustHaves tests
+// Integration test: middleware stores lifecycle data
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log("\n=== checkSummaryMentionsMustHaves: all mentioned ===");
+console.log("\n=== Integration: middleware stores lifecycle data on execute-task ===");
 {
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const mustHaves = [
-    { text: "Implement `validateEmail` function", checked: false },
-    { text: "Add error handling for empty input", checked: false },
-  ];
-  const summary = `
-    Summary of work done:
-    - Implemented the validateEmail function with regex validation
-    - Added comprehensive error handling for empty input cases
-  `;
-  const result = (hook as any).checkSummaryMentionsMustHaves(mustHaves, summary);
-  assertEq(result, true, "should return true when all must-haves mentioned");
-}
+  const taskPlanContent = `
+# Task Plan
 
-console.log("\n=== checkSummaryMentionsMustHaves: partial mention ===");
-{
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const mustHaves = [
-    { text: "Implement `validateEmail` function", checked: false },
-    { text: "Add error handling for empty input", checked: false },
-  ];
-  const summary = `
-    Summary of work done:
-    - Implemented the validateEmail function
-    - Other work completed
-  `;
-  const result = (hook as any).checkSummaryMentionsMustHaves(mustHaves, summary);
-  assertEq(result, false, "should return false when not all must-haves mentioned");
-}
+## Must-Haves
+- [ ] Implement \`validateEmail\` function
+- [ ] Add error handling for empty input
+`;
 
-console.log("\n=== checkSummaryMentionsMustHaves: empty must-haves ===");
-{
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const result = (hook as any).checkSummaryMentionsMustHaves([], "Some summary");
-  assertEq(result, true, "should return true when no must-haves to check");
-}
+  const mockContext: DispatchContext = {
+    basePath: "/test",
+    pi: mockPi,
+    ctx: mockCtx,
+    state: {
+      activeMilestone: { id: "M001", title: "Test" },
+      activeSlice: { id: "S01", title: "Test" },
+      activeTask: { id: "T01", title: "Test" },
+      phase: "executing",
+      recentDecisions: [],
+      blockers: [],
+      nextAction: "test",
+      registry: [],
+      extensions: {},
+    },
+    workingState: {
+      activeMilestone: { id: "M001", title: "Test" },
+      activeSlice: { id: "S01", title: "Test" },
+      activeTask: { id: "T01", title: "Test" },
+      phase: "executing",
+      recentDecisions: [],
+      blockers: [],
+      nextAction: "test",
+      registry: [],
+      extensions: {},
+    },
+    getExtensionData: <T>() => undefined,
+    setExtensionData: <T>(_name: string, data: T) => {
+      mockContext.workingState.extensions!["task-lifecycle"] = data;
+    },
+    resolveTaskFile: (filename: string) => {
+      if (filename === "PLAN") return "/test/plan.md";
+      return null;
+    },
+    resolveSliceFile: () => null,
+    resolveMilestoneFile: () => null,
+    completedKeySet: new Set(),
+    getCompletedKey: () => "",
+    isUnitCompleted: () => false,
+  };
 
-console.log("\n=== checkSummaryMentionsMustHaves: significant word matching ===");
-{
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const mustHaves = [
-    { text: "Implement user authentication system", checked: false },
-  ];
-  const summary = `
-    Work completed:
-    - Built the authentication system for users
-  `;
-  const result = (hook as any).checkSummaryMentionsMustHaves(mustHaves, summary);
-  assertEq(result, true, "should match significant words (authentication)");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// loadSummary tests
-// ═══════════════════════════════════════════════════════════════════════════
-
-console.log("\n=== loadSummary: returns content when file exists ===");
-{
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  // Mock fs.readFile by temporarily replacing it
+  // Mock fs.readFile to return task plan content
   const originalReadFile = fs.readFile;
-  (fs as any).readFile = async () => "# Summary\n\nWork completed.";
+  (fs as any).readFile = async (path: string, _encoding?: string) => {
+    if (path === "/test/plan.md") return taskPlanContent;
+    return originalReadFile(path, "utf-8");
+  };
+
+  const middleware = createTaskLifecycleMiddleware({ basePath: "/test", pi: mockPi, ctx: mockCtx });
+  await middleware(mockContext, async () => {});
+
+  const lifecycleData = mockContext.workingState.extensions?.["task-lifecycle"] as TaskLifecycleData | undefined;
   
-  const result = await (hook as any).loadSummary("/test/summary.md");
-  assertEq(result, "# Summary\n\nWork completed.", "should return file content");
-  
+  assert(lifecycleData !== undefined, "lifecycle data should be set");
+  assertEq(lifecycleData?.taskId, "T01", "taskId should match");
+  assertEq(lifecycleData?.mustHaves.length, 2, "should have 2 must-haves");
+  assertEq(lifecycleData?.mustHavesAddressed, false, "mustHavesAddressed should be false initially");
+
   // Restore original
   (fs as any).readFile = originalReadFile;
 }
 
-console.log("\n=== loadSummary: returns null when file not found ===");
-{
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
-  const originalReadFile = fs.readFile;
-  const error = new Error("File not found") as NodeJS.ErrnoException;
-  error.code = "ENOENT";
-  (fs as any).readFile = async () => { throw error; };
-  
-  const result = await (hook as any).loadSummary("/test/nonexistent.md");
-  assertEq(result, null, "should return null for ENOENT");
-  
-  (fs as any).readFile = originalReadFile;
-}
+// ═══════════════════════════════════════════════════════════════════════════
+// Integration test: middleware parses must-haves from task plan
+// ═══════════════════════════════════════════════════════════════════════════
 
-console.log("\n=== loadSummary: returns null on other errors ===");
+console.log("\n=== Integration: middleware parses must-haves from task plan ===");
 {
-  const hook = new TaskLifecycleHook("/test", mockPi, mockCtx);
+  const taskPlanContent = `
+# Task Plan
+
+## Must-Haves
+- [ ] Implement \`validateEmail\` function
+- [ ] Add error handling for empty input
+`;
+
+  const mockContext: DispatchContext = {
+    basePath: "/test",
+    pi: mockPi,
+    ctx: mockCtx,
+    state: {
+      activeMilestone: { id: "M001", title: "Test" },
+      activeSlice: { id: "S01", title: "Test" },
+      activeTask: { id: "T01", title: "Test" },
+      phase: "executing",
+      recentDecisions: [],
+      blockers: [],
+      nextAction: "test",
+      registry: [],
+      extensions: {},
+    },
+    workingState: {
+      activeMilestone: { id: "M001", title: "Test" },
+      activeSlice: { id: "S01", title: "Test" },
+      activeTask: { id: "T01", title: "Test" },
+      phase: "executing",
+      recentDecisions: [],
+      blockers: [],
+      nextAction: "test",
+      registry: [],
+      extensions: {},
+    },
+    getExtensionData: <T>() => undefined,
+    setExtensionData: <T>(_name: string, data: T) => {
+      mockContext.workingState.extensions!["task-lifecycle"] = data;
+    },
+    resolveTaskFile: (filename: string) => {
+      if (filename === "PLAN") return "/test/plan.md";
+      return null;
+    },
+    resolveSliceFile: () => null,
+    resolveMilestoneFile: () => null,
+    completedKeySet: new Set(),
+    getCompletedKey: () => "",
+    isUnitCompleted: () => false,
+  };
+
+  // Mock fs.readFile to return task plan content
   const originalReadFile = fs.readFile;
-  (fs as any).readFile = async () => { throw new Error("Permission denied"); };
+  (fs as any).readFile = async (path: string, _encoding?: string) => {
+    if (path === "/test/plan.md") return taskPlanContent;
+    return originalReadFile(path, "utf-8");
+  };
+
+  const middleware = createTaskLifecycleMiddleware({ basePath: "/test", pi: mockPi, ctx: mockCtx });
+  await middleware(mockContext, async () => {});
+
+  const lifecycleData = mockContext.workingState.extensions?.["task-lifecycle"] as TaskLifecycleData | undefined;
   
-  const result = await (hook as any).loadSummary("/test/error.md");
-  assertEq(result, null, "should return null on other errors");
-  
+  assert(lifecycleData !== undefined, "lifecycle data should be set");
+  assertEq(lifecycleData?.taskId, "T01", "taskId should match");
+  assertEq(lifecycleData?.mustHaves.length, 2, "should have 2 must-haves");
+  assertEq(lifecycleData?.mustHaves[0].text, "Implement `validateEmail` function", "first must-have text should match");
+  assertEq(lifecycleData?.mustHaves[1].text, "Add error handling for empty input", "second must-have text should match");
+  assertEq(lifecycleData?.mustHavesAddressed, false, "mustHavesAddressed should be false initially");
+
+  // Restore original
   (fs as any).readFile = originalReadFile;
 }
 

@@ -35,6 +35,7 @@ export { createObservabilityMiddleware } from "./observability.js";
 export { createMetricsMiddleware } from "./metrics.js";
 export { createNotificationsMiddleware } from "./notifications.js";
 export { createValidationMiddleware } from "./validation.js";
+export { createTaskLifecycleMiddleware } from "../task-lifecycle-hook.js";
 
 // ─── Decision Constant Exports ─────────────────────────────────────────────
 

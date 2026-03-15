@@ -1491,79 +1491,19 @@ async function dispatchNextUnit(
   const workingState = dispatchContext.workingState;
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Special Decision Handling
+  // Middleware Decision Dispatch
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Check for special decisions from the middleware chain
+  // If middleware made a decision, dispatch it
   if (dispatchContext.decision) {
-    const { decision } = dispatchContext;
+    const { unitType, unitId, prompt, metadata } = dispatchContext.decision;
 
-    // Handle SKIP_DECISION (from idempotency middleware)
-    if (decision.unitType === "skip" && decision.metadata?.skip) {
-      ctx.ui.notify(
-        `Skipping unit — already completed. Advancing.`,
-        "info"
-      );
-      await dispatchNextUnit(ctx, pi);
-      return;
-    }
+    // Emit observability warnings
+    await emitObservabilityWarnings(ctx, unitType, unitId);
 
-    // Handle PAUSE_DECISION (from budget-ceiling middleware)
-    if (decision.unitType === "pause" && decision.metadata?.reason === "budget_ceiling_reached") {
-      ctx.ui.notify(
-        `Budget ceiling reached. Pausing auto-mode — /gsd auto to continue.`,
-        "warning"
-      );
-      await pauseAuto(ctx, pi);
-      return;
-    }
-
-    // Handle MERGE_ERROR_DECISION (from merge-guard middleware)
-    if (decision.unitType === "error" && decision.metadata?.reason === "slice_merge_failed") {
-      const errorMsg = decision.metadata?.error as string;
-      ctx.ui.notify(
-        `Slice merge failed — stopping auto-mode. Fix conflicts manually and restart.\n${errorMsg}`,
-        "error"
-      );
-      if (currentUnit) {
-        const modelId = ctx.model?.id ?? "unknown";
-        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
-        saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
-      }
-      await stopAuto(ctx, pi);
-      return;
-    }
-
-    // Handle regular dispatch decision from middleware
-    if (decision.unitType && decision.unitId && decision.prompt) {
-      ctx.ui.notify(
-        `Middleware decision: ${decision.unitType} ${decision.unitId}`,
-        "info"
-      );
-
-      let unitType: string = decision.unitType;
-      let unitId: string = decision.unitId;
-      let prompt: string = decision.prompt;
-      const hookMetadata: Record<string, unknown> | undefined = decision.metadata;
-
-      // Emit observability warnings for the middleware's chosen unit
-      await emitObservabilityWarnings(ctx, unitType, unitId);
-
-      // Idempotency check for middleware decision
-      const idempotencyKey = `${unitType}/${unitId}`;
-      if (completedKeySet.has(idempotencyKey)) {
-        ctx.ui.notify(
-          `Skipping ${unitType} ${unitId} — already completed (middleware decision).`,
-          "info"
-        );
-        await dispatchNextUnit(ctx, pi);
-        return;
-      }
-
-      // Dispatch the unit normally
-      continueWithDispatch(ctx, pi, unitType, unitId, prompt, hookMetadata, mid, midTitle, state);
-      return;
-    }
+    // Dispatch the unit
+    continueWithDispatch(ctx, pi, unitType, unitId, prompt, metadata, mid, midTitle, state);
+    return;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

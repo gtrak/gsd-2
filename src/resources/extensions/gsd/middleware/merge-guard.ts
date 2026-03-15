@@ -164,48 +164,45 @@ export function createMergeGuardMiddleware(
       // Call next() — we modified state, let other middlewares run
       await next();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+       const errorMsg = error instanceof Error ? error.message : String(error);
 
-      // Safety net: if mergeSliceToMain failed to clean up (or the error
-      // came from switchToMain), ensure the working tree isn't left in a
-      // conflicted/dirty merge state. Without this, state derivation reads
-      // conflict-marker-filled files, produces a corrupt phase, and
-      // dispatch loops forever.
-      try {
-        const { runGit } = await import("../git-service.js");
-        const status = runGit(basePath, ["status", "--porcelain"], {
-          allowFailure: true,
-        });
-        if (
-          status &&
-          (status.includes("UU ") ||
-            status.includes("AA ") ||
-            status.includes("UD "))
-        ) {
-          runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
-          context.ctx.ui.notify(
-            `Cleaned up conflicted merge state after failed squash-merge.`,
-            "warning",
-          );
-        }
-      } catch {
-        // Best-effort cleanup — ignore any errors
-      }
+       // Safety net: if mergeSliceToMain failed to clean up (or the error
+       // came from switchToMain), ensure the working tree isn't left in a
+       // conflicted/dirty merge state. Without this, state derivation reads
+       // conflict-marker-filled files, produces a corrupt phase, and
+       // dispatch loops forever.
+       try {
+         const { runGit } = await import("../git-service.js");
+         const status = runGit(basePath, ["status", "--porcelain"], {
+           allowFailure: true,
+         });
+         if (
+           status &&
+           (status.includes("UU ") ||
+             status.includes("AA ") ||
+             status.includes("UD "))
+         ) {
+           runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
+           context.ctx.ui.notify(
+             `Cleaned up conflicted merge state after failed squash-merge.`,
+             "warning",
+           );
+         }
+       } catch {
+         // Best-effort cleanup — ignore any errors
+       }
 
-      // Notify the user of the merge failure
-      context.ctx.ui.notify(
-        `Slice merge failed — stopping auto-mode. Fix conflicts manually and restart.\n${message}`,
-        "error",
-      );
+       // Notify the user of the merge failure
+       context.ctx.ui.notify(`Slice merge failed — stopping auto-mode. Fix conflicts manually and restart.\n${errorMsg}`, "error");
 
       // Set the error decision with merge failure metadata
-      context.decision = {
-        ...MERGE_ERROR_DECISION,
-        metadata: {
-          ...MERGE_ERROR_DECISION.metadata,
-          error: message,
-        },
-      };
+       context.decision = {
+         ...MERGE_ERROR_DECISION,
+         metadata: {
+           ...MERGE_ERROR_DECISION.metadata,
+           error: errorMsg,
+         },
+       };
 
       // DO NOT call next() — we're making a decision to stop
       return;

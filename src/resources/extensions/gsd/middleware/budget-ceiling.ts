@@ -87,10 +87,7 @@ export function createBudgetCeilingMiddleware(
     // Check if budget ceiling has been reached or exceeded
     if (totalCost >= budgetCeiling) {
       // Notify the user with warning
-      context.ctx.ui.notify(
-        `Budget ceiling ${formatCost(budgetCeiling)} reached (spent ${formatCost(totalCost)}). Pausing auto-mode — /gsd auto to continue.`,
-        "warning",
-      );
+      context.ctx.ui.notify(`Budget ceiling reached. Pausing auto-mode — /gsd auto to continue.`, "warning");
 
       // Set the pause decision with budget metadata
       context.decision = {

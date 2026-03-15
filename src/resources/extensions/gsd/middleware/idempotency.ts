@@ -85,10 +85,7 @@ export function createIdempotencyMiddleware(
 
       if (artifactExists) {
         // Artifact exists — skip this unit and advance
-        context.ctx.ui.notify(
-          `Skipping ${unitType} ${unitId} — already completed in a prior session. Advancing.`,
-          "info",
-        );
+        context.ctx.ui.notify(`Skipping unit — already completed. Advancing.`, "info");
 
         // Set the skip decision to tell the dispatcher to advance
         context.decision = SKIP_DECISION;

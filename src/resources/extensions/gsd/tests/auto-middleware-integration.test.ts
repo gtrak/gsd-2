@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { composeDispatchMiddlewares, composeDispatchMiddlewaresWithPreferences } from "../middleware/index.js";
+import { composeDispatchMiddlewares } from "../middleware/index.js";
 import { loadMiddlewareConfig } from "../preferences.js";
 import type {
   DispatchContext,
@@ -198,7 +198,7 @@ console.log("=== Test 1: executeDispatchMiddlewares loads preferences and applie
     },
   };
 
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Should only have the 3 enabled middlewares
   assertEq(middlewares.length, 3, "should have exactly 3 enabled middlewares");
@@ -224,7 +224,7 @@ console.log("\n=== Test 2: disabled middlewares from preferences are not execute
     },
   };
 
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Should have 8 middlewares (11 - 3 disabled)
   assertEq(middlewares.length, 8, "should have 8 middlewares (3 disabled)");
@@ -261,7 +261,7 @@ console.log("\n=== Test 3: enabled list from preferences is respected ===");
     },
   };
 
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Verify all enabled middlewares are present with their default stages
   const names = middlewares.map(getMiddlewareName);
@@ -287,7 +287,7 @@ console.log("\n=== Test 4: falls back to defaults when no middleware config ==="
 {
   const prefs: GSDPreferences = {}; // No middleware config
 
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Should have all 11 default middlewares
   assertEq(middlewares.length, 11, "should have all 11 default middlewares");
@@ -310,7 +310,7 @@ console.log("\n=== Test 4: falls back to defaults when no middleware config ==="
 // Test 5: falls back to defaults when no preferences file
 console.log("\n=== Test 5: falls back to defaults when no preferences file ===");
 {
-  // When prefs is null/undefined, composeDispatchMiddlewaresWithPreferences
+  // When prefs is null/undefined, composeDispatchMiddlewares
   // should fall back to composeDispatchMiddlewares()
   const prefs: GSDPreferences = undefined as any;
 
@@ -341,7 +341,7 @@ console.log("\n=== Test 6: custom registered middlewares are still included ==="
 
   const prefs: GSDPreferences = {};
 
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Should have 12 middlewares (11 default + 1 custom)
   assertEq(middlewares.length, 12, "should have 12 middlewares (11 default + 1 custom)");
@@ -384,7 +384,7 @@ console.log("\n=== Test 7: integration works end-to-end with real dispatch flow 
     },
   };
 
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Should have exactly 4 middlewares
   assertEq(middlewares.length, 4, "should have exactly 4 middlewares");
@@ -472,7 +472,7 @@ console.log("\n=== Test 10: combined enabled and disabled lists work correctly =
     },
   };
 
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Disabled should take precedence - code-review should not be present
   const names = middlewares.map(getMiddlewareName);

@@ -179,54 +179,20 @@ function attachMetadata(middleware: DispatchMiddleware, registration: { name: st
 }
 
 /**
- * Composes all dispatch middlewares including registered custom middlewares.
+ * Sorts middlewares by their pipeline stage.
  *
- * Returns middlewares sorted by stage (pre-validation first, notification last), including:
- * - Built-in middlewares (idempotency, budget-ceiling, merge-guard, etc.)
- * - Custom middlewares registered via registerDispatchMiddleware()
- *
- * Disabled middlewares are filtered out of the result.
- *
- * @returns An array of enabled DispatchMiddleware functions sorted by stage
- *
- * @example
- * ```typescript
- * const middlewares = composeDispatchMiddlewares();
- * ```
+ * @param middlewares - Array of middleware functions to sort
+ * @returns The sorted array (modifies in place)
  */
-export function composeDispatchMiddlewares(): DispatchMiddleware[] {
-  // Get built-in middlewares
-  const builtInMiddlewares = [
-    createIdempotencyMiddleware(),      // pre-validation
-    createValidationMiddleware(),       // validation
-    createBudgetCeilingMiddleware(),    // pre-dispatch
-    createMergeGuardMiddleware(),       // pre-dispatch
-    createUatDispatchMiddleware(),      // dispatch
-    createReassessmentMiddleware(),     // dispatch
-    createPhaseDispatchMiddleware(),    // dispatch
-    createCodeReviewMiddleware(),       // dispatch
-    createMetricsMiddleware(),          // post-dispatch
-    createObservabilityMiddleware(),    // post-dispatch
-    createNotificationsMiddleware(),    // notification
-  ];
-
-  // Get registered custom middlewares (only enabled ones) and attach metadata
-  const customMiddlewares = getRegisteredDispatchMiddlewares()
-    .filter(reg => reg.enabled)
-    .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, stage: reg.stage }));
-
-  // Combine all middlewares
-  const allMiddlewares = [...builtInMiddlewares, ...customMiddlewares];
-
-  // Sort by stage (earlier stages first)
-  return allMiddlewares.sort((a, b) => {
+function sortByStage(middlewares: DispatchMiddleware[]): DispatchMiddleware[] {
+  return middlewares.sort((a, b) => {
     const stageA = (a as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
     const stageB = (b as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
     return STAGE_ORDER[stageA] - STAGE_ORDER[stageB];
   });
 }
 
-// ─── Compose Function with Preferences ─────────────────────────────────────
+// ─── Unified Compose Function ───────────────────────────────────────────────
 
 /**
  * Default stages for built-in middlewares.
@@ -246,23 +212,27 @@ export const DEFAULT_MIDDLEWARE_STAGES: Record<string, PipelineStage> = {
 };
 
 /**
- * Composes dispatch middlewares using GSD preferences configuration.
+ * Composes dispatch middlewares with optional preferences configuration.
  *
- * This function allows configuring middlewares via preferences.md, supporting:
- * - Enabling/disabling individual middlewares
- * - Overriding middleware stages
- * - Merging global and project preferences
+ * Returns middlewares sorted by stage (pre-validation first, notification last), including:
+ * - Built-in middlewares (idempotency, budget-ceiling, merge-guard, etc.)
+ * - Custom middlewares registered via registerDispatchMiddleware()
  *
- * If no middleware configuration is provided, all built-in middlewares are
- * returned with their default stages.
+ * If no preferences are provided, all built-in middlewares are returned with their default stages.
+ * When preferences are provided, middleware configuration (enabled/disabled lists, stage overrides)
+ * is applied to customize the middleware pipeline.
  *
- * @param prefs - GSD preferences containing optional middleware configuration
+ * @param prefs - Optional GSD preferences containing middleware configuration
  * @returns An array of enabled DispatchMiddleware functions sorted by stage
  *
  * @example
  * ```typescript
+ * // Default: all built-in middlewares
+ * const middlewares = composeDispatchMiddlewares();
+ *
+ * // With preferences
  * const prefs = loadEffectiveGSDPreferences()?.preferences ?? {};
- * const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+ * const middlewares = composeDispatchMiddlewares(prefs);
  * ```
  *
  * @example
@@ -279,19 +249,43 @@ export const DEFAULT_MIDDLEWARE_STAGES: Record<string, PipelineStage> = {
  *       - uat-dispatch
  * ```
  */
-export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences): DispatchMiddleware[] {
+export function composeDispatchMiddlewares(prefs?: GSDPreferences): DispatchMiddleware[] {
   // Get middleware preferences from GSD preferences
-  const middlewarePrefs = prefs.middleware;
-
+  const middlewarePrefs = prefs?.middleware;
+  
   // If no middleware preferences, return all built-in middlewares with defaults
   if (!middlewarePrefs) {
-    return composeDispatchMiddlewares();
+    // Get built-in middlewares
+    const builtInMiddlewares = [
+      createIdempotencyMiddleware(),      // pre-validation
+      createValidationMiddleware(),       // validation
+      createBudgetCeilingMiddleware(),    // pre-dispatch
+      createMergeGuardMiddleware(),       // pre-dispatch
+      createUatDispatchMiddleware(),      // dispatch
+      createReassessmentMiddleware(),     // dispatch
+      createPhaseDispatchMiddleware(),    // dispatch
+      createCodeReviewMiddleware(),       // dispatch
+      createMetricsMiddleware(),          // post-dispatch
+      createObservabilityMiddleware(),    // post-dispatch
+      createNotificationsMiddleware(),    // notification
+    ];
+    
+    // Get registered custom middlewares (only enabled ones) and attach metadata
+    const customMiddlewares = getRegisteredDispatchMiddlewares()
+      .filter(reg => reg.enabled)
+      .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, stage: reg.stage }));
+    
+    // Combine all middlewares
+    const allMiddlewares = [...builtInMiddlewares, ...customMiddlewares];
+    
+    // Sort by stage (earlier stages first)
+    return sortByStage(allMiddlewares);
   }
-
+  
   // Build a map of enabled middlewares with their stages
   const enabledMap = new Map<string, PipelineStage>();
   const disabledSet = new Set<string>();
-
+  
   // Process enabled middlewares
   if (middlewarePrefs.enabled && middlewarePrefs.enabled.length > 0) {
     for (const entry of middlewarePrefs.enabled) {
@@ -301,20 +295,20 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
       enabledMap.set(entry.name, stage);
     }
   }
-
+  
   // Process disabled middlewares
   if (middlewarePrefs.disabled && middlewarePrefs.disabled.length > 0) {
     for (const name of middlewarePrefs.disabled) {
       disabledSet.add(name);
     }
   }
-
+  
   // If enabled list is specified, only include those middlewares
   const useEnabledList = middlewarePrefs.enabled && middlewarePrefs.enabled.length > 0;
-
+  
   // Create middlewares based on configuration
   const middlewares: DispatchMiddleware[] = [];
-
+  
   // Helper to check if a middleware should be included
   function shouldInclude(name: string): boolean {
     if (disabledSet.has(name)) return false;
@@ -323,12 +317,12 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
     }
     return true;
   }
-
+  
   // Helper to get stage for a middleware
   function getStage(name: string): PipelineStage {
     return enabledMap.get(name) ?? DEFAULT_MIDDLEWARE_STAGES[name] ?? "dispatch";
   }
-
+  
   // Create each middleware if it should be included
   if (shouldInclude("idempotency")) {
     middlewares.push(createIdempotencyMiddleware({ stage: getStage("idempotency"), enabled: true }));
@@ -363,19 +357,15 @@ export function composeDispatchMiddlewaresWithPreferences(prefs: GSDPreferences)
   if (shouldInclude("notifications")) {
     middlewares.push(createNotificationsMiddleware({ stage: getStage("notifications"), enabled: true }));
   }
-
+  
   // Add registered custom middlewares (only enabled ones)
   const customMiddlewares = getRegisteredDispatchMiddlewares()
     .filter(reg => reg.enabled && !disabledSet.has(reg.name) && (!useEnabledList || enabledMap.has(reg.name)))
     .map(reg => attachMetadata(reg.middleware as DispatchMiddleware, { name: reg.name, stage: reg.stage }));
-
+  
   // Combine all middlewares
   const allMiddlewares = [...middlewares, ...customMiddlewares];
-
+  
   // Sort by stage (earlier stages first)
-  return allMiddlewares.sort((a, b) => {
-    const stageA = (a as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
-    const stageB = (b as DispatchMiddleware & { __metadata?: { stage: PipelineStage } }).__metadata?.stage ?? "dispatch";
-    return STAGE_ORDER[stageA] - STAGE_ORDER[stageB];
-  });
+  return sortByStage(allMiddlewares);
 }

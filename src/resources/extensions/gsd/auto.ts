@@ -83,7 +83,7 @@ import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { makeUI, GLYPH, INDENT } from "../shared/ui.js";
 import { showNextAction } from "../shared/next-action-ui.js";
 import { createTaskLifecycleMiddleware } from "./task-lifecycle-hook.js";
-import { composeDispatchMiddlewares, composeDispatchMiddlewaresWithPreferences, registerDispatchMiddleware, clearRegisteredDispatchMiddlewares, getRegisteredDispatchMiddlewares } from "./middleware/index.js";
+import { composeDispatchMiddlewares, registerDispatchMiddleware, clearRegisteredDispatchMiddlewares, getRegisteredDispatchMiddlewares } from "./middleware/index.js";
 import type { DispatchContext, DispatchDecision } from "./middleware/types.js";
 
 // ─── Disk-backed completed-unit helpers ───────────────────────────────────────
@@ -1027,9 +1027,7 @@ async function executeDispatchMiddlewares(
 ): Promise<DispatchContext> {
   // Load preferences and compose middlewares with preferences, falling back to defaults if no config
   const prefs = loadEffectiveGSDPreferences();
-  const middlewares = prefs
-    ? composeDispatchMiddlewaresWithPreferences(prefs.preferences)
-    : composeDispatchMiddlewares();
+  const middlewares = composeDispatchMiddlewares(prefs?.preferences);
 
   // Create initial context
   const dispatchContext: DispatchContext = {

@@ -579,10 +579,7 @@ function oneLine(text: string): string {
  */
 export {
   registerDispatchMiddleware,
-  getRegisteredDispatchMiddlewares,
-  clearRegisteredDispatchMiddlewares,
   composeDispatchMiddlewares,
-  composeDispatchMiddlewaresWithPreferences,
 } from "./middleware/index.js";
 
 /**
@@ -593,7 +590,5 @@ export type {
   DispatchDecision,
   DispatchMiddleware,
   MiddlewareConfig,
-  MiddlewareFactory,
-  DispatchMiddlewareRegistration,
   PipelineStage,
 } from "./middleware/index.js";

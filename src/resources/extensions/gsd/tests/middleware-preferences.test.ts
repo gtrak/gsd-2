@@ -7,7 +7,7 @@ import {
   type GSDPreferences,
 } from "../preferences.js";
 import {
-  composeDispatchMiddlewaresWithPreferences,
+  composeDispatchMiddlewares,
   clearRegisteredDispatchMiddlewares,
 } from "../middleware/index.js";
 import type { PipelineStage } from "../middleware/types.js";
@@ -162,8 +162,8 @@ console.log("\n=== Test 4: loadMiddlewareConfig returns disabled middleware list
   }
 }
 
-// Test 5: composeDispatchMiddlewaresWithPreferences respects enabled list
-console.log("\n=== Test 6: composeDispatchMiddlewaresWithPreferences respects enabled list ===");
+// Test 5: composeDispatchMiddlewares respects enabled list
+console.log("\n=== Test 6: composeDispatchMiddlewares respects enabled list ===");
 {
   clearRegisteredDispatchMiddlewares();
 
@@ -175,7 +175,7 @@ console.log("\n=== Test 6: composeDispatchMiddlewaresWithPreferences respects en
       ],
     },
   };
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Should only have the 2 enabled middlewares
   assertArrayLength(middlewares, 2, "should have 2 middlewares (only enabled ones)");
@@ -187,8 +187,8 @@ console.log("\n=== Test 6: composeDispatchMiddlewaresWithPreferences respects en
   assert(!names.includes("uat-dispatch"), "uat-dispatch should NOT be in the list");
 }
 
-// Test 7: composeDispatchMiddlewaresWithPreferences filters disabled middlewares
-console.log("\n=== Test 7: composeDispatchMiddlewaresWithPreferences filters disabled middlewares ===");
+// Test 7: composeDispatchMiddlewares filters disabled middlewares
+console.log("\n=== Test 7: composeDispatchMiddlewares filters disabled middlewares ===");
 {
   clearRegisteredDispatchMiddlewares();
 
@@ -197,7 +197,7 @@ console.log("\n=== Test 7: composeDispatchMiddlewaresWithPreferences filters dis
       disabled: ["uat-dispatch", "merge-guard"],
     },
   };
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   const names = middlewares.map(m => (m as any).__metadata?.name);
   assert(!names.includes("uat-dispatch"), "uat-dispatch should NOT be in the list");
@@ -209,8 +209,8 @@ console.log("\n=== Test 7: composeDispatchMiddlewaresWithPreferences filters dis
   assert(names.includes("code-review"), "code-review should be in the list");
 }
 
-// Test 8: composeDispatchMiddlewaresWithPreferences uses default stages
-console.log("\n=== Test 8: composeDispatchMiddlewaresWithPreferences uses default stages ===");
+// Test 8: composeDispatchMiddlewares uses default stages
+console.log("\n=== Test 8: composeDispatchMiddlewares uses default stages ===");
 {
   clearRegisteredDispatchMiddlewares();
 
@@ -223,7 +223,7 @@ console.log("\n=== Test 8: composeDispatchMiddlewaresWithPreferences uses defaul
       ],
     },
   };
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   const idempotency = middlewares.find(m => (m as any).__metadata?.name === "idempotency");
   assertNotNull(idempotency, "idempotency should be found");
@@ -244,13 +244,13 @@ console.log("\n=== Test 8: composeDispatchMiddlewaresWithPreferences uses defaul
   }
 }
 
-// Test 9: composeDispatchMiddlewaresWithPreferences uses defaults when no config
-console.log("\n=== Test 9: composeDispatchMiddlewaresWithPreferences uses defaults when no config ===");
+// Test 9: composeDispatchMiddlewares uses defaults when no config
+console.log("\n=== Test 9: composeDispatchMiddlewares uses defaults when no config ===");
 {
   clearRegisteredDispatchMiddlewares();
 
   const prefs: GSDPreferences = {};
-  const middlewares = composeDispatchMiddlewaresWithPreferences(prefs);
+  const middlewares = composeDispatchMiddlewares(prefs);
 
   // Should have all 11 default middlewares
   assertArrayLength(middlewares, 11, "should have 11 default middlewares");
@@ -270,8 +270,8 @@ console.log("\n=== Test 9: composeDispatchMiddlewaresWithPreferences uses defaul
   assertEq(stages[10], "notification", "eleventh middleware should have stage notification");
 }
 
-// Test 10: composeDispatchMiddlewaresWithPreferences merges global and project prefs
-console.log("\n=== Test 10: composeDispatchMiddlewaresWithPreferences merges global and project prefs ===");
+// Test 10: composeDispatchMiddlewares merges global and project prefs
+console.log("\n=== Test 10: composeDispatchMiddlewares merges global and project prefs ===");
 {
   clearRegisteredDispatchMiddlewares();
 
@@ -286,7 +286,7 @@ console.log("\n=== Test 10: composeDispatchMiddlewaresWithPreferences merges glo
       disabled: ["uat-dispatch"],
     },
   };
-  const middlewares = composeDispatchMiddlewaresWithPreferences(mergedPrefs);
+  const middlewares = composeDispatchMiddlewares(mergedPrefs);
 
   const names = middlewares.map(m => (m as any).__metadata?.name);
 

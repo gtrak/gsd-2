@@ -6,7 +6,6 @@ import {
   getRegisteredDispatchMiddlewares,
   clearRegisteredDispatchMiddlewares,
   composeDispatchMiddlewares,
-  composeDispatchMiddlewaresWithPreferences,
 } from "../middleware/index.js";
 import type {
   DispatchContext,
@@ -116,7 +115,6 @@ console.log("=== Test 1: all middleware registration functions are exported ==="
   assertTypeIsFunction(getRegisteredDispatchMiddlewares, "getRegisteredDispatchMiddlewares should be a function");
   assertTypeIsFunction(clearRegisteredDispatchMiddlewares, "clearRegisteredDispatchMiddlewares should be a function");
   assertTypeIsFunction(composeDispatchMiddlewares, "composeDispatchMiddlewares should be a function");
-  assertTypeIsFunction(composeDispatchMiddlewaresWithPreferences, "composeDispatchMiddlewaresWithPreferences should be a function");
 }
 
 // Test 2: all middleware types are exported
@@ -214,15 +212,15 @@ console.log("\n=== Test 4: extension author can create custom DispatchMiddleware
 // Test 5: compose functions are exported
 console.log("\n=== Test 7: compose functions are exported ===");
 {
-  // Test composeDispatchMiddlewares
+  // Test composeDispatchMiddlewares (default)
   const middlewares = composeDispatchMiddlewares();
   assert(Array.isArray(middlewares), "composeDispatchMiddlewares should return an array");
   assert(middlewares.length > 0, "composeDispatchMiddlewares should return middlewares");
 
-  // Test composeDispatchMiddlewaresWithPreferences
+  // Test composeDispatchMiddlewares with preferences
   const prefs: any = {};
-  const middlewaresWithPrefs = composeDispatchMiddlewaresWithPreferences(prefs);
-  assert(Array.isArray(middlewaresWithPrefs), "composeDispatchMiddlewaresWithPreferences should return an array");
+  const middlewaresWithPrefs = composeDispatchMiddlewares(prefs);
+  assert(Array.isArray(middlewaresWithPrefs), "composeDispatchMiddlewares with prefs should return an array");
 }
 
 // Test 8: middleware factory types are accessible

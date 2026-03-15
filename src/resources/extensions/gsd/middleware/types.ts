@@ -192,10 +192,3 @@ export interface DispatchMiddlewareRegistration {
    */
   middleware: DispatchMiddleware;
 }
-
-// ─── Legacy Type Aliases ───────────────────────────────────────────────────
-
-/**
- * @deprecated Use `DispatchMiddleware` instead. This type alias is kept for backward compatibility.
- */
-export type GSDMiddleware = DispatchMiddleware;
